@@ -372,15 +372,23 @@ function desktopNotify(n) {
 // ---------------------------------------------------------------- sounds
 // Distinct Web Audio tones per event — no audio files (works under Vercel's CSP).
 let audioCtx = null;
+let masterGain = null;
 let soundOn = localStorage.getItem('tl_sound') !== 'off';
+const SOUND_VOLUME = 2.4; // master boost; a compressor/limiter keeps it from distorting
 function initAudio() {
   try {
     if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx && !masterGain) {
+      masterGain = audioCtx.createGain();
+      masterGain.gain.value = SOUND_VOLUME;
+      const comp = audioCtx.createDynamicsCompressor(); // acts as a limiter when pushed loud
+      masterGain.connect(comp).connect(audioCtx.destination);
+    }
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
   } catch {}
 }
-function beep(freq, startAt, dur, type = 'sine', peak = 0.16) {
-  if (!audioCtx) return;
+function beep(freq, startAt, dur, type = 'sine', peak = 0.5) {
+  if (!audioCtx || !masterGain) return;
   const t = audioCtx.currentTime + startAt;
   const osc = audioCtx.createOscillator();
   const g = audioCtx.createGain();
@@ -389,18 +397,18 @@ function beep(freq, startAt, dur, type = 'sine', peak = 0.16) {
   g.gain.setValueAtTime(0.0001, t);
   g.gain.exponentialRampToValueAtTime(peak, t + 0.012);
   g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(g).connect(audioCtx.destination);
+  osc.connect(g).connect(masterGain);
   osc.start(t); osc.stop(t + dur + 0.03);
 }
 const SOUNDS = {
   // new task assigned — bright two-note rise
-  assigned:  () => { beep(523.25, 0, 0.13, 'sine'); beep(783.99, 0.11, 0.16, 'sine'); },
+  assigned:  () => { beep(523.25, 0, 0.15, 'sine', 0.6); beep(783.99, 0.12, 0.2, 'sine', 0.6); },
   // task completed — happy major arpeggio C–E–G
-  completed: () => { beep(523.25, 0, 0.12, 'triangle'); beep(659.25, 0.11, 0.12, 'triangle'); beep(783.99, 0.22, 0.2, 'triangle'); },
+  completed: () => { beep(523.25, 0, 0.14, 'triangle', 0.55); beep(659.25, 0.12, 0.14, 'triangle', 0.55); beep(783.99, 0.24, 0.26, 'triangle', 0.6); },
   // task delay / overdue — urgent low buzzer, descending, repeated
-  delay:     () => { beep(440, 0, 0.16, 'square', 0.12); beep(330, 0.19, 0.24, 'square', 0.12); beep(330, 0.5, 0.22, 'square', 0.1); },
-  // generic notification log — soft short blip
-  log:       () => { beep(700, 0, 0.09, 'sine', 0.1); },
+  delay:     () => { beep(440, 0, 0.18, 'square', 0.5); beep(330, 0.21, 0.26, 'square', 0.5); beep(330, 0.54, 0.28, 'square', 0.5); },
+  // generic notification log — short blip
+  log:       () => { beep(700, 0, 0.11, 'sine', 0.5); },
 };
 function playSound(kind) {
   if (!soundOn) return;
