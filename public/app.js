@@ -369,6 +369,55 @@ function desktopNotify(n) {
   try { new Notification(n.title, { body: n.body, tag: 'task-' + n.id }); } catch {}
 }
 
+// ---------------------------------------------------------------- sounds
+// Distinct Web Audio tones per event — no audio files (works under Vercel's CSP).
+let audioCtx = null;
+let soundOn = localStorage.getItem('tl_sound') !== 'off';
+function initAudio() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  } catch {}
+}
+function beep(freq, startAt, dur, type = 'sine', peak = 0.16) {
+  if (!audioCtx) return;
+  const t = audioCtx.currentTime + startAt;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(peak, t + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(g).connect(audioCtx.destination);
+  osc.start(t); osc.stop(t + dur + 0.03);
+}
+const SOUNDS = {
+  // new task assigned — bright two-note rise
+  assigned:  () => { beep(523.25, 0, 0.13, 'sine'); beep(783.99, 0.11, 0.16, 'sine'); },
+  // task completed — happy major arpeggio C–E–G
+  completed: () => { beep(523.25, 0, 0.12, 'triangle'); beep(659.25, 0.11, 0.12, 'triangle'); beep(783.99, 0.22, 0.2, 'triangle'); },
+  // task delay / overdue — urgent low buzzer, descending, repeated
+  delay:     () => { beep(440, 0, 0.16, 'square', 0.12); beep(330, 0.19, 0.24, 'square', 0.12); beep(330, 0.5, 0.22, 'square', 0.1); },
+  // generic notification log — soft short blip
+  log:       () => { beep(700, 0, 0.09, 'sine', 0.1); },
+};
+function playSound(kind) {
+  if (!soundOn) return;
+  initAudio();
+  (SOUNDS[kind] || SOUNDS.log)();
+}
+function soundForNotif(type) {
+  if (type === 'overdue' || type === 'due_soon') return 'delay';
+  if (type === 'created') return 'assigned';
+  if (type === 'completed') return 'completed';
+  return 'log'; // status changes, new project, etc.
+}
+function setSoundBtn() {
+  const b = document.getElementById('soundbtn');
+  if (b) { b.textContent = soundOn ? '🔊' : '🔇'; b.title = `Sound alerts: ${soundOn ? 'on' : 'off'}`; }
+}
+
 // ---------------------------------------------------------------- live (polling)
 // Serverless can't hold an SSE connection, so we poll /api/state. Polling also
 // triggers scan-on-read, which is how due/overdue notifications get raised.
@@ -389,6 +438,7 @@ function handleNewNotifications() {
   const fresh = notifs.filter(n => n.id > lastNotifId).sort((a, b) => a.id - b.id);
   for (const n of fresh) {
     toast(n.title, n.body, NOTIF_COLOR[n.type] || '#6D4FCF');
+    playSound(soundForNotif(n.type));
     if (!n.read) desktopNotify(n);
   }
   if (maxId > lastNotifId) lastNotifId = maxId;
@@ -460,6 +510,16 @@ function init() {
   };
   $('#markall').onclick = () => act('/api/notifications/read-all', { method: 'POST' });
   $('#logout').onclick = async () => { try { await apiRaw('/api/auth/logout', { method: 'POST' }); } catch {} showAuth(); };
+
+  // sound toggle + unlock audio on the first user gesture (browser autoplay policy)
+  setSoundBtn();
+  $('#soundbtn').onclick = () => {
+    soundOn = !soundOn;
+    localStorage.setItem('tl_sound', soundOn ? 'on' : 'off');
+    setSoundBtn();
+    if (soundOn) playSound('log'); // preview when turning on
+  };
+  document.addEventListener('pointerdown', initAudio, { once: true });
   document.addEventListener('click', e => {
     if (ui.panelOpen && !e.target.closest('.bell')) { ui.panelOpen = false; renderNotifications(); }
   });

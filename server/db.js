@@ -14,22 +14,33 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 function makeClient() {
   const url = process.env.TURSO_DATABASE_URL;
   if (url) return createClient({ url, authToken: process.env.TURSO_AUTH_TOKEN, intMode: 'number' });
+  // No Turso configured. On Vercel there is no writable/persistent filesystem, so
+  // we can't fall back to a file — mark as unconfigured and fail loudly on use
+  // (instead of crashing the whole function at import time).
+  if (process.env.VERCEL) return null;
   const path = process.env.TASKLIST_DB || join(__dirname, '..', 'data', 'tasklist.db');
   mkdirSync(dirname(path), { recursive: true });
   return createClient({ url: 'file:' + path.replace(/\\/g, '/'), intMode: 'number' });
 }
-const client = makeClient();
+let _client;
+try { _client = makeClient(); } catch { _client = null; }
+function client() {
+  if (!_client) throw new Error('Database not configured. On Vercel, set TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in Project Settings → Environment Variables, then redeploy.');
+  return _client;
+}
+export const isConfigured = () => !!_client;
+export const ping = async () => { await client().execute('SELECT 1'); return true; };
 
 // tiny query helpers
-const all = async (sql, args = []) => (await client.execute({ sql, args })).rows;
-const get = async (sql, args = []) => (await client.execute({ sql, args })).rows[0] || null;
-const run = async (sql, args = []) => client.execute({ sql, args });
+const all = async (sql, args = []) => (await client().execute({ sql, args })).rows;
+const get = async (sql, args = []) => (await client().execute({ sql, args })).rows[0] || null;
+const run = async (sql, args = []) => client().execute({ sql, args });
 const nowIso = () => new Date().toISOString();
 
 // ---------------------------------------------------------------- schema (once per process)
 let schemaReady = null;
 export function ready() {
-  if (!schemaReady) schemaReady = client.executeMultiple(`
+  if (!schemaReady) schemaReady = client().executeMultiple(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL DEFAULT '', password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
@@ -355,5 +366,3 @@ export async function seedUserWorkspace(userId) {
       [userId, idByKey[key], title, role, prio, status, due, ts, ts, status === 'done' ? ts : null]);
   }
 }
-
-export { client };

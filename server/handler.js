@@ -50,10 +50,19 @@ export async function handleApi(req, res) {
   const method = req.method;
   if (!pathname.startsWith('/api/') && pathname !== '/api') return false;
 
-  await db.ready();
+  // Health / diagnostic — must work even if the database is misconfigured.
+  // Open /api/health?db=1 in the browser to test the actual DB connection.
+  if (pathname === '/api/health' && method === 'GET') {
+    const info = { ok: true, time: new Date().toISOString(), vercel: !!process.env.VERCEL, dbConfigured: db.isConfigured() };
+    if (url.searchParams.get('db') === '1') {
+      try { await db.ready(); await db.ping(); info.db = 'connected'; }
+      catch (e) { info.ok = false; info.db = 'error'; info.dbError = e.message; }
+    }
+    return send(res, info.ok ? 200 : 500, info), true;
+  }
 
   try {
-    if (pathname === '/api/health' && method === 'GET') return ok(res, { ok: true, time: new Date().toISOString() }), true;
+    await db.ready();
 
     // ---- auth (public) ----
     if (pathname === '/api/auth/register' && method === 'POST') {
