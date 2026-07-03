@@ -9,6 +9,12 @@ function send(res, status, body, headers = {}) {
   const payload = isObj ? JSON.stringify(body) : body;
   res.writeHead(status, {
     'Content-Type': isObj ? 'application/json; charset=utf-8' : (headers['Content-Type'] || 'text/plain; charset=utf-8'),
+    // CORS so the Chrome extension (a different origin) can call the API. Auth is
+    // via Bearer token (not cookies), so we don't need Allow-Credentials.
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET,POST,PATCH,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+    'Access-Control-Max-Age': '86400',
     ...headers,
   });
   res.end(payload);
@@ -35,6 +41,12 @@ function parseCookies(req) {
   for (const part of raw.split(';')) { const i = part.indexOf('='); if (i > -1) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim()); }
   return out;
 }
+// Session token from a Bearer header (extension) or the sid cookie (web app).
+function getToken(req) {
+  const auth = req.headers.authorization || '';
+  const m = /^Bearer\s+(.+)$/i.exec(auth);
+  return m ? m[1].trim() : parseCookies(req).sid;
+}
 const isHttps = req => (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 function sessionCookie(req, token, expiresAt) {
   const attrs = [`sid=${token}`, 'HttpOnly', 'Path=/', 'SameSite=Lax', `Expires=${new Date(expiresAt).toUTCString()}`];
@@ -49,6 +61,9 @@ export async function handleApi(req, res) {
   const { pathname } = url;
   const method = req.method;
   if (!pathname.startsWith('/api/') && pathname !== '/api') return false;
+
+  // CORS preflight (extension calls with Authorization/Content-Type headers).
+  if (method === 'OPTIONS') return send(res, 204, ''), true;
 
   // Health / diagnostic — must work even if the database is misconfigured.
   // Open /api/health?db=1 in the browser to test the actual DB connection.
@@ -68,23 +83,24 @@ export async function handleApi(req, res) {
     if (pathname === '/api/auth/register' && method === 'POST') {
       const user = await db.registerUser(await readBody(req));
       const { token, expiresAt } = await db.createSession(user.id);
-      return send(res, 201, { user }, { 'Set-Cookie': sessionCookie(req, token, expiresAt) }), true;
+      // token is returned for header-based clients (the extension); the web app uses the cookie.
+      return send(res, 201, { user, token }, { 'Set-Cookie': sessionCookie(req, token, expiresAt) }), true;
     }
     if (pathname === '/api/auth/login' && method === 'POST') {
       const user = await db.authenticate(await readBody(req));
       const { token, expiresAt } = await db.createSession(user.id);
-      return send(res, 200, { user }, { 'Set-Cookie': sessionCookie(req, token, expiresAt) }), true;
+      return send(res, 200, { user, token }, { 'Set-Cookie': sessionCookie(req, token, expiresAt) }), true;
     }
     if (pathname === '/api/auth/logout' && method === 'POST') {
-      await db.deleteSession(parseCookies(req).sid);
+      await db.deleteSession(getToken(req));
       return send(res, 200, { ok: true }, { 'Set-Cookie': clearCookie }), true;
     }
     if (pathname === '/api/auth/me' && method === 'GET') {
-      return ok(res, { user: (await db.getSessionUser(parseCookies(req).sid)) || null }), true;
+      return ok(res, { user: (await db.getSessionUser(getToken(req))) || null }), true;
     }
 
     // ---- authenticated ----
-    const user = await db.getSessionUser(parseCookies(req).sid);
+    const user = await db.getSessionUser(getToken(req));
     if (!user) return bad(res, 'Not authenticated', 401), true;
     const uid = user.id;
     const sp = url.searchParams;
@@ -138,6 +154,17 @@ export async function handleApi(req, res) {
     if (pathname === '/api/notifications/scan' && method === 'POST') return ok(res, { raised: await db.scanUserDue(uid) }), true;
     m = pathname.match(/^\/api\/notifications\/(\d+)\/read$/);
     if (m && method === 'POST') { await db.markNotificationRead(uid, Number(m[1])); return ok(res, { ok: true }), true; }
+
+    // notes
+    if (pathname === '/api/notes' && method === 'GET') return ok(res, await db.listNotes(uid, { limit: Number(sp.get('limit')) || 100 })), true;
+    if (pathname === '/api/notes' && method === 'POST') return send(res, 201, await db.createNote(uid, await readBody(req))), true;
+    m = pathname.match(/^\/api\/notes\/(\d+)$/);
+    if (m) {
+      const id = Number(m[1]);
+      if (method === 'GET') { const n = await db.getNote(uid, id); return (n ? ok(res, n) : bad(res, 'Note not found', 404)), true; }
+      if (method === 'PATCH') return ok(res, await db.updateNote(uid, id, await readBody(req))), true;
+      if (method === 'DELETE') return ((await db.deleteNote(uid, id)) ? ok(res, { deleted: true }) : bad(res, 'Note not found', 404)), true;
+    }
 
     return bad(res, `No route: ${method} ${pathname}`, 404), true;
   } catch (err) {

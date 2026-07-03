@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <style>
+    :root { --accent: #B4471F; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; }
+    body {
+      width: 360px; background: #F7F5F0; color: #1B1A17;
+      font-family: system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 14px;
+    }
+    .pad { padding: 14px; }
+    h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: -.01em; }
+    .eyebrow { font-size: 11px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #A19A8B; }
+    .muted { color: #A19A8B; font-size: 12.5px; }
+    input, select, textarea, button { font-family: inherit; font-size: 14px; }
+    .fld {
+      width: 100%; background: #fff; border: 1px solid #E2DDD1; border-radius: 9px;
+      padding: 9px 11px; outline: none; color: #1B1A17;
+    }
+    .fld:focus { border-color: var(--accent); }
+    textarea.fld { resize: vertical; min-height: 64px; }
+    .row { display: flex; gap: 8px; }
+    .row > * { flex: 1; min-width: 0; }
+    label.lbl { display: block; font-size: 11.5px; font-weight: 600; color: #78715F; margin: 0 0 4px; }
+    .field { margin-bottom: 10px; }
+    .btn { border: none; border-radius: 9px; padding: 10px 14px; font-weight: 600; cursor: pointer; }
+    .btn-accent { background: var(--accent); color: #fff; width: 100%; }
+    .btn-dark { background: #1B1A17; color: #fff; }
+    .btn-ghost { background: #ECE8DE; color: #5C554A; }
+    .btn-sm { padding: 6px 10px; font-size: 12.5px; border-radius: 8px; }
+    .err { background: #FBEBE9; color: #C13A2C; border: 1px solid #F3D3CE; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin-bottom: 10px; display: none; }
+    .ok { color: #2A8062; font-size: 12.5px; font-weight: 600; height: 16px; }
+
+    header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border-bottom: 1px solid #E6E2D8; background: #fff; }
+    .avatar { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); color: #fff; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+    .who { display: flex; align-items: center; gap: 9px; min-width: 0; }
+    .email { font-size: 12.5px; font-weight: 600; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+    .tabs { display: flex; gap: 4px; background: #ECE8DE; border-radius: 10px; padding: 3px; margin-bottom: 12px; }
+    .tabs button { flex: 1; border: none; background: transparent; color: #8C8574; font-weight: 600; padding: 7px; border-radius: 8px; cursor: pointer; }
+    .tabs button.on { background: #fff; color: #1B1A17; box-shadow: 0 1px 3px rgba(40,34,20,.14); }
+
+    .note { background: #fff; border: 1px solid #EAE6DC; border-radius: 10px; padding: 9px 11px; margin-top: 8px; }
+    .note .body { white-space: pre-wrap; word-break: break-word; font-size: 13px; line-height: 1.4; }
+    .note .meta { display: flex; align-items: center; justify-content: space-between; margin-top: 6px; }
+    .note .time { font-size: 11px; color: #B4AD9C; }
+    .del { border: none; background: none; color: #CDC7B7; cursor: pointer; font-size: 13px; }
+    .del:hover { color: #D24B3E; }
+    .empty { color: #B4AD9C; font-style: italic; font-size: 12.5px; padding: 10px 2px; }
+    .center { text-align: center; }
+    .stack8 > * + * { margin-top: 8px; }
+  </style>
+</head>
+<body>
+  <!-- OFFLINE -->
+  <div id="offline" class="pad center" style="display:none">
+    <p class="eyebrow">Task List</p>
+    <h1 style="margin:6px 0 8px;">App not reachable</h1>
+    <p class="muted">Couldn't reach <b>localhost:4000</b>. Make sure the Task List server is running, then retry.</p>
+    <div class="stack8" style="margin-top:12px;">
+      <button id="retry" class="btn btn-accent">Retry</button>
+      <button id="offline-open" class="btn btn-ghost" style="width:100%">Open app tab anyway</button>
+    </div>
+  </div>
+
+  <!-- LOGIN -->
+  <div id="login" class="pad" style="display:none">
+    <p class="eyebrow">Task List</p>
+    <h1 style="margin:6px 0 4px;">Sign in</h1>
+    <p class="muted" style="margin:0 0 12px;">Use the same email &amp; password as the app.</p>
+    <div id="login-err" class="err"></div>
+    <div class="field"><input id="login-email" class="fld" type="email" placeholder="you@example.com" autocomplete="username"></div>
+    <div class="field"><input id="login-pass" class="fld" type="password" placeholder="Password" autocomplete="current-password"></div>
+    <button id="login-btn" class="btn btn-accent">Sign in</button>
+    <p class="muted center" style="margin-top:10px;">No account? <a id="login-open" href="#">Open the app</a> to create one.</p>
+  </div>
+
+  <!-- MAIN -->
+  <div id="main" style="display:none">
+    <header>
+      <div class="who">
+        <div class="avatar" id="avatar">?</div>
+        <div class="email" id="email"></div>
+      </div>
+      <div style="display:flex;gap:6px;">
+        <button id="open-app" class="btn btn-ghost btn-sm">Open app</button>
+        <button id="logout" class="btn btn-ghost btn-sm">Log out</button>
+      </div>
+    </header>
+    <div class="pad">
+      <div class="tabs">
+        <button id="tab-task" class="on">＋ Task</button>
+        <button id="tab-note">✎ Note</button>
+      </div>
+
+      <!-- TASK -->
+      <div id="view-task">
+        <div class="field">
+          <label class="lbl">Task</label>
+          <input id="t-title" class="fld" placeholder="What needs doing?">
+        </div>
+        <div class="field">
+          <label class="lbl">Project</label>
+          <select id="t-project" class="fld"></select>
+        </div>
+        <div class="row field">
+          <div>
+            <label class="lbl">Role</label>
+            <select id="t-role" class="fld">
+              <option value="dev">Dev</option><option value="design">Design</option>
+              <option value="marketing">Marketing</option><option value="seo">SEO</option>
+            </select>
+          </div>
+          <div>
+            <label class="lbl">Priority</label>
+            <select id="t-prio" class="fld">
+              <option value="high">High</option><option value="med" selected>Medium</option><option value="low">Low</option>
+            </select>
+          </div>
+        </div>
+        <div class="field">
+          <label class="lbl">Due (optional)</label>
+          <input id="t-due" class="fld" placeholder="e.g. Jul 20 or 2026-07-20">
+        </div>
+        <button id="t-add" class="btn btn-accent">Add task</button>
+        <p id="t-ok" class="ok center"></p>
+      </div>
+
+      <!-- NOTE -->
+      <div id="view-note" style="display:none">
+        <div class="field">
+          <label class="lbl">Quick note</label>
+          <textarea id="n-body" class="fld" placeholder="Jot something down…"></textarea>
+        </div>
+        <div class="row" style="align-items:center;">
+          <select id="n-project" class="fld"><option value="">No project</option></select>
+          <button id="n-add" class="btn btn-accent" style="flex:0 0 auto;width:auto;padding-left:18px;padding-right:18px;">Save</button>
+        </div>
+        <p id="n-ok" class="ok"></p>
+        <div id="n-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

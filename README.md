@@ -144,6 +144,35 @@ curl -b jar.txt http://localhost:4000/api/state
 | POST | `/api/notifications/:id/read` | Mark one read. |
 | POST | `/api/notifications/read-all` | Mark all read. |
 | POST | `/api/notifications/scan` | Force a due-date scan now. |
+| GET | `/api/notes` | List notes. Query: `limit`. |
+| POST | `/api/notes` | Create. Body: `{ body, projectId? }`. |
+| GET / PATCH / DELETE | `/api/notes/:id` | Get / update / delete a note. |
+
+**Auth for non-browser clients:** `/api/auth/login` and `/api/auth/register` also
+return a `token`. Send it as `Authorization: Bearer <token>` instead of the cookie
+(this is how the Chrome extension authenticates). CORS is open for this reason.
+
+## Chrome extension
+
+In [`extension/`](extension/) there's a Manifest V3 extension that:
+
+- **Opens the app as a tab when Chrome starts** (and once right after you install it).
+- Gives you a **popup to quickly add a task** (project, role, priority, due) and
+  **take notes**, without leaving the page you're on. Notes are saved to your account.
+
+**Install it (unpacked):**
+
+1. Make sure the app is running locally (`npm start`, at `http://localhost:4000`).
+2. Go to `chrome://extensions`, turn on **Developer mode** (top-right).
+3. Click **Load unpacked** and select the `extension/` folder.
+4. Click the extension's icon, **sign in** with your app email + password (the popup
+   uses a token, since browser cookies don't reach an extension). You're set.
+
+Notes:
+- The extension talks to `http://localhost:4000`. If you run the app on a different
+  port or host, edit `API`/`APP_URL` in `extension/popup.js` and `extension/background.js`
+  and the `host_permissions` in `extension/manifest.json`, then reload the extension.
+- "Open on startup" needs Chrome to have run the extension at least once.
 
 ## Project layout
 
@@ -157,7 +186,10 @@ api/
   [...path].js  Vercel serverless entry -> handler
 public/
   index.html    the UI (auth screen + board)
-  app.js        frontend logic (API calls + polling + notifications)
+  app.js        frontend logic (API calls + polling + notifications + sounds)
+extension/
+  manifest.json, background.js, popup.html, popup.js, icons/
+                Chrome extension: quick-add tasks + notes, open app on startup
 vercel.json     Vercel config (static from public/, API function, no build)
 Dockerfile      optional self-hosting on a persistent host
 data/            local SQLite file (gitignored on Vercel; not used there)

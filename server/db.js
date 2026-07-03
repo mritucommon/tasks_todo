@@ -58,9 +58,13 @@ export function ready() {
       id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, task_id INTEGER,
       type TEXT NOT NULL, title TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
       read INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS notes (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, body TEXT NOT NULL,
+      project_id TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
     CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, read);
+    CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
   `);
   return schemaReady;
@@ -299,6 +303,38 @@ export async function scanUserDue(userId) {
     }
   }
   return raised;
+}
+
+// ---------------------------------------------------------------- notes
+const rowToNote = r => r && ({ id: r.id, body: r.body, projectId: r.project_id, createdAt: r.created_at, updatedAt: r.updated_at });
+
+export const listNotes = async (userId, { limit = 100 } = {}) =>
+  (await all('SELECT * FROM notes WHERE user_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?', [userId, limit])).map(rowToNote);
+export const getNote = async (userId, id) =>
+  rowToNote(await get('SELECT * FROM notes WHERE user_id = ? AND id = ?', [userId, id]));
+
+export async function createNote(userId, { body, projectId = null } = {}) {
+  if (!body || !String(body).trim()) throw new Error('Note text is required');
+  if (projectId && !(await getProject(userId, projectId))) throw new Error(`Unknown projectId: ${projectId}`);
+  const ts = nowIso();
+  const info = await run('INSERT INTO notes (user_id,body,project_id,created_at,updated_at) VALUES (?,?,?,?,?)',
+    [userId, String(body).trim(), projectId || null, ts, ts]);
+  return getNote(userId, Number(info.lastInsertRowid));
+}
+export async function updateNote(userId, id, { body, projectId } = {}) {
+  const cur = await getNote(userId, id);
+  if (!cur) throw new Error(`Unknown note id: ${id}`);
+  const nextBody = body != null ? String(body).trim() : cur.body;
+  if (!nextBody) throw new Error('Note text is required');
+  const nextProject = projectId !== undefined ? (projectId || null) : cur.projectId;
+  if (nextProject && !(await getProject(userId, nextProject))) throw new Error(`Unknown projectId: ${nextProject}`);
+  await run('UPDATE notes SET body=?,project_id=?,updated_at=? WHERE user_id=? AND id=?', [nextBody, nextProject, nowIso(), userId, id]);
+  return getNote(userId, id);
+}
+export async function deleteNote(userId, id) {
+  if (!(await getNote(userId, id))) return false;
+  await run('DELETE FROM notes WHERE user_id = ? AND id = ?', [userId, id]);
+  return true;
 }
 
 // ---------------------------------------------------------------- stats
