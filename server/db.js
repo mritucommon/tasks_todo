@@ -71,6 +71,12 @@ export function ready() {
       created_at TEXT NOT NULL, edited_at TEXT, deleted INTEGER NOT NULL DEFAULT 0, read_at TEXT);
     CREATE TABLE IF NOT EXISTS chat_typing (
       user_id INTEGER NOT NULL, peer_id INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(user_id, peer_id));
+    CREATE TABLE IF NOT EXISTS calls (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, caller_id INTEGER NOT NULL, callee_id INTEGER NOT NULL,
+      kind TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ringing', created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+    CREATE TABLE IF NOT EXISTS call_signals (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, call_id INTEGER NOT NULL, sender_id INTEGER NOT NULL,
+      recipient_id INTEGER NOT NULL, type TEXT NOT NULL, data TEXT, created_at TEXT NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_msg_pair ON messages(sender_id, recipient_id, id);
@@ -524,6 +530,56 @@ export async function markChatRead(meId, peerId) {
 }
 export const chatUnreadTotal = async meId =>
   (await get('SELECT COUNT(*) c FROM messages WHERE recipient_id=? AND read_at IS NULL AND deleted=0', [meId])).c;
+
+// ---------------------------------------------------------------- calls (WebRTC signaling)
+async function callRow(id) { return get('SELECT * FROM calls WHERE id=?', [id]); }
+async function callView(id, meId) {
+  const c = await callRow(id);
+  if (!c || (c.caller_id !== meId && c.callee_id !== meId)) return null;
+  const caller = await getUserById(c.caller_id), callee = await getUserById(c.callee_id);
+  const light = u => u && { id: u.id, name: u.name || u.email.split('@')[0], email: u.email };
+  return {
+    id: c.id, kind: c.kind, status: c.status, callerId: c.caller_id, calleeId: c.callee_id,
+    caller: light(caller), callee: light(callee), mine: c.caller_id === meId,
+    peer: c.caller_id === meId ? light(callee) : light(caller),
+    createdAt: c.created_at, updatedAt: c.updated_at,
+  };
+}
+export async function createCall(meId, { to, kind = 'video' } = {}) {
+  const rid = Number(to);
+  if (!rid || !(await getUserById(rid))) throw new Error('Unknown callee');
+  if (!['audio', 'video'].includes(kind)) kind = 'video';
+  const ts = nowIso();
+  const info = await run('INSERT INTO calls (caller_id,callee_id,kind,status,created_at,updated_at) VALUES (?,?,?,?,?,?)',
+    [meId, rid, kind, 'ringing', ts, ts]);
+  return callView(Number(info.lastInsertRowid), meId);
+}
+export const getCall = (id, meId) => callView(id, meId);
+// A ringing call addressed to me, created recently (so stale rings don't linger).
+export async function incomingCall(meId) {
+  const cutoff = new Date(Date.now() - 45000).toISOString();
+  const c = await get("SELECT id FROM calls WHERE callee_id=? AND status='ringing' AND created_at>=? ORDER BY id DESC LIMIT 1", [meId, cutoff]);
+  return c ? callView(c.id, meId) : null;
+}
+export async function setCallStatus(meId, id, status) {
+  const c = await callRow(id);
+  if (!c || (c.caller_id !== meId && c.callee_id !== meId)) throw new Error('Call not found');
+  await run('UPDATE calls SET status=?, updated_at=? WHERE id=?', [status, nowIso(), id]);
+  return callView(id, meId);
+}
+export async function addSignal(meId, id, type, data) {
+  const c = await callRow(id);
+  if (!c || (c.caller_id !== meId && c.callee_id !== meId)) throw new Error('Call not found');
+  const to = c.caller_id === meId ? c.callee_id : c.caller_id;
+  await run('INSERT INTO call_signals (call_id,sender_id,recipient_id,type,data,created_at) VALUES (?,?,?,?,?,?)',
+    [id, meId, to, type, data == null ? null : JSON.stringify(data), nowIso()]);
+  return true;
+}
+export async function consumeSignals(meId, id) {
+  const rows = await all('SELECT * FROM call_signals WHERE call_id=? AND recipient_id=? ORDER BY id ASC', [id, meId]);
+  if (rows.length) await run('DELETE FROM call_signals WHERE call_id=? AND recipient_id=?', [id, meId]);
+  return rows.map(r => ({ type: r.type, from: r.sender_id, data: r.data ? JSON.parse(r.data) : null }));
+}
 
 // ---------------------------------------------------------------- per-user seed
 export async function seedUserWorkspace(userId) {

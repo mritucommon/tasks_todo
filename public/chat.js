@@ -6,7 +6,7 @@ const POLL_MS = 1000;
 const AV_COLORS = ['#3E52C9', '#A93C93', '#B7671A', '#2A8062', '#6D5BD0', '#0E7C86', '#C23B5B'];
 const STATUS_META = { todo: { l: 'To Do', c: '#8C8574', b: '#EFEBE1' }, inprogress: { l: 'In Progress', c: '#B07514', b: '#FAF0E0' }, done: { l: 'Done', c: '#2A8062', b: '#E7F4EE' } };
 
-let me = null, contacts = [], activePeer = null, messages = [], pending = [], pollTimer = null, lastTyping = 0, searchQ = '';
+let me = null, contacts = [], activePeer = null, activePeerName = '', messages = [], pending = [], pollTimer = null, lastTyping = 0, searchQ = '';
 
 async function api(path, opts = {}) {
   const res = await fetch(path, { method: opts.method || 'GET', headers: { 'Content-Type': 'application/json' }, body: opts.body ? JSON.stringify(opts.body) : undefined });
@@ -37,6 +37,8 @@ async function boot() {
   $('#search').oninput = e => { searchQ = e.target.value.toLowerCase(); renderContacts(); };
   $('#send').onclick = send;
   $('#attach').onclick = openShareTask;
+  $('#call-audio').onclick = () => activePeer && window.TLCall && window.TLCall.start(activePeer, activePeerName, 'audio');
+  $('#call-video').onclick = () => activePeer && window.TLCall && window.TLCall.start(activePeer, activePeerName, 'video');
   $('#back').onclick = () => { activePeer = null; $('#thread').style.display = 'none'; $('#empty').style.display = 'flex'; };
   $('#modal-x').onclick = closeModal;
   $('#modal-bg').onclick = e => { if (e.target.id === 'modal-bg') closeModal(); };
@@ -67,6 +69,7 @@ function renderContacts() {
 function openPeer(id) {
   activePeer = id; messages = []; pending = [];
   const c = contacts.find(x => x.id === id) || {};
+  activePeerName = c.name || c.email || '';
   $('#empty').style.display = 'none';
   $('#thread').style.display = 'flex';
   $('#peer-av').textContent = initials(c); $('#peer-av').style.background = avColor(id);

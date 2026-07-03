@@ -213,6 +213,21 @@ export async function handleApi(req, res) {
       if (method === 'DELETE') return ok(res, await db.deleteMessage(uid, id)), true;
     }
 
+    // calls (WebRTC signaling over the API; media is peer-to-peer)
+    if (pathname === '/api/calls' && method === 'POST') return send(res, 201, await db.createCall(uid, await readBody(req))), true;
+    if (pathname === '/api/calls/incoming' && method === 'GET') return ok(res, { call: await db.incomingCall(uid) }), true;
+    m = pathname.match(/^\/api\/calls\/(\d+)$/);
+    if (m && method === 'GET') { const c = await db.getCall(Number(m[1]), uid); return (c ? ok(res, c) : bad(res, 'Call not found', 404)), true; }
+    m = pathname.match(/^\/api\/calls\/(\d+)\/(accept|decline|end)$/);
+    if (m && method === 'POST') {
+      const status = { accept: 'accepted', decline: 'declined', end: 'ended' }[m[2]];
+      return ok(res, await db.setCallStatus(uid, Number(m[1]), status)), true;
+    }
+    m = pathname.match(/^\/api\/calls\/(\d+)\/signal$/);
+    if (m && method === 'POST') { const b = await readBody(req); await db.addSignal(uid, Number(m[1]), b.type, b.data); return ok(res, { ok: true }), true; }
+    m = pathname.match(/^\/api\/calls\/(\d+)\/signals$/);
+    if (m && method === 'GET') return ok(res, { signals: await db.consumeSignals(uid, Number(m[1])) }), true;
+
     return bad(res, `No route: ${method} ${pathname}`, 404), true;
   } catch (err) {
     return bad(res, err.message || 'Server error', 400), true;
