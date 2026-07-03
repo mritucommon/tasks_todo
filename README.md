@@ -1,61 +1,95 @@
 # Task List — Live
 
 A living, database-backed, **multi-user** task list. What used to be a static
-in-memory prototype is now a real application:
+in-memory prototype is now a real application that runs both locally and on Vercel:
 
 - **Accounts** — email + password sign-in. Every project, task, and notification is
   scoped to its owner, so accounts are fully isolated. Passwords are hashed with
   scrypt; sessions are httpOnly cookies. A new account starts with a sample workspace.
-- **Database** — everything persists in SQLite (`data/tasklist.db`).
-- **Alive** — a real HTTP server with a per-user Server-Sent Events stream, so your
-  UI updates in real time whenever anything changes (another tab, or via the API).
-- **Notifications** — a background engine raises **due soon** and **overdue** alerts,
-  plus events for created / completed / status changes. Shown as a notification bell,
-  toasts, and (with permission) desktop notifications.
+- **Database** — SQLite via **libSQL**. Locally it's a file (`data/tasklist.db`);
+  on Vercel it's a hosted **Turso** database — same code, chosen by env vars.
+- **Alive** — the UI polls for changes (every few seconds) and reflects mutations
+  immediately, so edits from another tab or via the API show up on their own.
+- **Notifications** — **due soon** / **overdue** alerts are generated on read
+  (scan-on-read), plus events for created / completed / status changes. Shown as a
+  notification bell, toasts, and (with permission) desktop notifications.
 - **REST API** — a clean HTTP API over the same database, so any external tool can
   read and manage tasks.
 
-Zero runtime dependencies — it runs on Node's built-in `node:sqlite`, `http`, and
-`crypto` modules.
-
 ## Requirements
 
-- Node.js **≥ 22.5** (uses the built-in `node:sqlite`). Tested on Node 24.
+- Node.js **22.x** (works on 18+; libSQL client, no native build).
 
-## Run
+## Run locally
 
 ```bash
+npm install
 npm start
 ```
 
-Then open **http://localhost:4000**.
+Then open **http://localhost:4000**. Register an account and you're in.
 
-- The database is created and seeded automatically on first run (`data/tasklist.db`).
+- Uses a local SQLite file by default (`data/tasklist.db`), created on first run.
 - Change the port with `PORT=5000 npm start`.
-- Use a different database file with `TASKLIST_DB=/path/to/other.db`.
-- Delete `data/tasklist.db` to reset to seed data.
+- Point at a different file with `TASKLIST_DB=/path/to/other.db`.
+- Point at Turso instead of a file with `TURSO_DATABASE_URL` (+ `TURSO_AUTH_TOKEN`).
+- Delete `data/tasklist.db` to start fresh.
 
 Dev mode (auto-restart on file changes): `npm run dev`.
 
 ## Start automatically on boot (Windows)
 
-Register the server to launch (hidden) at every logon — no admin rights needed:
+Register the local server to launch (hidden) at every logon — no admin rights needed:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install-autostart.ps1
 ```
 
 This drops a shortcut in your Startup folder that runs [`scripts/start-hidden.vbs`](scripts/start-hidden.vbs),
-which starts the server with no console window and logs to `data/autostart.log`.
+which starts the server with no console window. Remove it with `scripts\uninstall-autostart.ps1`.
 
-- Start it now without rebooting: `wscript scripts\start-hidden.vbs`
-- Remove auto-start: `powershell -ExecutionPolicy Bypass -File scripts\uninstall-autostart.ps1`
+## Deploy to Vercel (with Turso)
+
+Vercel is serverless, so it can't keep a local file — the database lives in **Turso**
+(hosted libSQL). The API runs as a serverless function ([`api/[...path].js`](api/%5B...path%5D.js));
+the frontend in `public/` is served statically. Config is in [`vercel.json`](vercel.json).
+
+1. **Create a Turso database** and get its URL + token — easiest via the Turso CLI:
+   ```bash
+   turso db create tasklist
+   turso db show tasklist --url          # -> libsql://... (TURSO_DATABASE_URL)
+   turso db tokens create tasklist       # -> the auth token (TURSO_AUTH_TOKEN)
+   ```
+   (Or add the **Turso** integration from the Vercel Marketplace, which provisions a
+   database and injects these env vars for you.)
+2. **In Vercel → Project → Settings → Environment Variables**, add:
+   - `TURSO_DATABASE_URL` = the `libsql://…` URL
+   - `TURSO_AUTH_TOKEN` = the token
+3. If your Vercel project was previously set to a framework preset, set **Framework
+   Preset = Other** (or clear any custom Build Command). `vercel.json` already sets
+   `framework: null` and an empty build — this is what fixes the old
+   `react-scripts: command not found` error.
+4. **Redeploy.** Open the app, register an account, done. The Turso database persists
+   across deploys.
+
+> Note: on serverless there's no background timer, so due/overdue notifications are
+> generated when a user loads their data (scan-on-read) rather than on a schedule.
+
+## Self-host instead (Railway / Render / Fly / Docker)
+
+Prefer a long-running server with a plain file database? Use the [`Dockerfile`](Dockerfile):
+mount a persistent volume at `/data` and set `TASKLIST_DB=/data/tasklist.db`.
+
+```bash
+docker build -t tasklist .
+docker run -p 4000:4000 -v tasklist_data:/data tasklist
+```
 
 ## REST API
 
-Base URL: `http://localhost:4000`. All responses are JSON. Requests are same-origin
-and carry the session cookie automatically. Everything except `/api/health` and the
-`/api/auth/*` endpoints **requires a logged-in session cookie** (`sid`).
+Base URL: `http://localhost:4000` (or your deployment). Responses are JSON. Requests are
+same-origin and carry the session cookie automatically. Everything except `/api/health`
+and `/api/auth/*` **requires a logged-in session cookie** (`sid`).
 
 ### Auth
 
@@ -76,9 +110,8 @@ curl -c jar.txt -X POST http://localhost:4000/api/auth/register \
 curl -b jar.txt http://localhost:4000/api/state
 ```
 
-### Data shapes
+### Task shape
 
-**Task**
 ```json
 {
   "id": 12, "projectId": "aurora", "title": "Build responsive nav",
@@ -96,86 +129,38 @@ curl -b jar.txt http://localhost:4000/api/state
 
 | Method | Path | Description |
 | --- | --- | --- |
-| GET | `/api/health` | Liveness check. |
-| GET | `/api/state` | Everything at once: `{ projects, tasks, notifications, stats }`. Accepts the same task filters as below. |
+| GET | `/api/health` | Liveness check (no auth). |
+| GET | `/api/state` | Everything at once: `{ user, projects, tasks, notifications, stats }`. Accepts the task filters below. Also runs the due-date scan. |
 | GET | `/api/stats` | Counts: total, done, overdue, dueSoon, inProgress, todo, pct, projects, unread. |
 | GET | `/api/projects` | List projects. |
 | POST | `/api/projects` | Create. Body: `{ name, subtitle?, color?, ai? }`. |
-| GET | `/api/projects/:id` | One project. |
-| DELETE | `/api/projects/:id` | Delete a project (and its tasks). |
+| GET / DELETE | `/api/projects/:id` | Get / delete a project (delete cascades to its tasks). |
 | GET | `/api/tasks` | List tasks. Query: `projectId`, `role`, `status`, `q` (title search). |
 | POST | `/api/tasks` | Create. Body: `{ projectId, title, role?, prio?, due?, status?, ai? }`. |
-| GET | `/api/tasks/:id` | One task. |
-| PATCH | `/api/tasks/:id` | Update any of `projectId, title, role, prio, status, due`. |
-| DELETE | `/api/tasks/:id` | Delete a task. |
+| GET / PATCH / DELETE | `/api/tasks/:id` | Get / update / delete a task. |
 | POST | `/api/tasks/:id/cycle` | Advance status todo → inprogress → done → todo. |
 | POST | `/api/tasks/:id/complete` | Mark done. |
-| GET | `/api/notifications` | List. Query: `unread=1`, `limit`. |
+| GET | `/api/notifications` | List. Query: `unread=1`, `limit`. Also runs the scan. |
 | POST | `/api/notifications/:id/read` | Mark one read. |
 | POST | `/api/notifications/read-all` | Mark all read. |
-| POST | `/api/notifications/scan` | Force a due-date scan now (also runs every 60s). |
-| GET | `/api/events` | **SSE stream** of `hello`, `change`, and `notification` events (each carries fresh `stats`). |
-
-### Examples
-
-```bash
-# Create a task
-curl -X POST http://localhost:4000/api/tasks \
-  -H "Content-Type: application/json" \
-  -d '{"projectId":"aurora","title":"Ship the pricing page","role":"dev","prio":"high","due":"2026-07-09"}'
-
-# Complete it
-curl -X POST http://localhost:4000/api/tasks/29/complete
-
-# What needs attention?
-curl "http://localhost:4000/api/stats"
-
-# Watch changes live
-curl -N http://localhost:4000/api/events
-```
-
-## Deploy (persistent host)
-
-This app is a long-running Node server with a **file database** and **live SSE**, so
-it needs a host that keeps a process alive and gives it a persistent disk — e.g.
-**Railway**, **Render**, or **Fly.io**. (It is *not* compatible with serverless
-platforms like Vercel, whose filesystem is ephemeral — the SQLite file would reset
-between requests.)
-
-The one thing that matters everywhere: mount a persistent volume and point
-`TASKLIST_DB` at it, so the database survives restarts and redeploys.
-
-**Environment variables**
-- `PORT` — set by the host automatically; the server reads it.
-- `TASKLIST_DB` — absolute path to the SQLite file on the persistent volume
-  (e.g. `/data/tasklist.db`). The included [`Dockerfile`](Dockerfile) defaults to this.
-
-**Railway** — New Project → Deploy from GitHub → this repo. Add a **Volume** mounted at
-`/data`. Add variable `TASKLIST_DB=/data/tasklist.db`. Deploy.
-
-**Render** — New → Web Service → this repo → Runtime **Docker**. Add a **Disk** mounted
-at `/data`. Add env var `TASKLIST_DB=/data/tasklist.db`.
-
-**Fly.io** — `fly launch` (detects the Dockerfile) → `fly volumes create data` →
-mount it at `/data` in `fly.toml` → set `TASKLIST_DB=/data/tasklist.db` → `fly deploy`.
-
-**Local Docker**
-```bash
-docker build -t tasklist .
-docker run -p 4000:4000 -v tasklist_data:/data tasklist
-```
+| POST | `/api/notifications/scan` | Force a due-date scan now. |
 
 ## Project layout
 
 ```
 server/
-  db.js         data layer (SQLite): projects, tasks, notifications, stats, seed
-  notifier.js   background due-soon / overdue scanner
-  server.js     REST API + SSE + static file server
+  db.js         async data layer (libSQL): users, sessions, projects, tasks,
+                notifications, stats, per-user seed, scan-on-read
+  handler.js    shared async API router (used by both entry points below)
+  server.js     local Node server: static frontend + handler
+api/
+  [...path].js  Vercel serverless entry -> handler
 public/
-  index.html    the live UI
-  app.js        frontend logic (API calls + SSE + notifications)
-data/            SQLite database file (created at runtime, gitignored)
+  index.html    the UI (auth screen + board)
+  app.js        frontend logic (API calls + polling + notifications)
+vercel.json     Vercel config (static from public/, API function, no build)
+Dockerfile      optional self-hosting on a persistent host
+data/            local SQLite file (gitignored on Vercel; not used there)
 ```
 
 The original prototype (`Task List.dc.html`, `support.js`) is left untouched for reference.
