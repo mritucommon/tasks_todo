@@ -1,18 +1,22 @@
 # Task List — Live
 
-A living, database-backed task list. What used to be a static in-memory prototype
-is now a real application:
+A living, database-backed, **multi-user** task list. What used to be a static
+in-memory prototype is now a real application:
 
-- **Database** — projects, tasks, and notifications persist in SQLite (`data/tasklist.db`).
-- **Alive** — a real HTTP server with a Server-Sent Events stream, so the UI updates
-  in real time whenever anything changes (in the browser, from another tab, or via the API).
+- **Accounts** — email + password sign-in. Every project, task, and notification is
+  scoped to its owner, so accounts are fully isolated. Passwords are hashed with
+  scrypt; sessions are httpOnly cookies. A new account starts with a sample workspace.
+- **Database** — everything persists in SQLite (`data/tasklist.db`).
+- **Alive** — a real HTTP server with a per-user Server-Sent Events stream, so your
+  UI updates in real time whenever anything changes (another tab, or via the API).
 - **Notifications** — a background engine raises **due soon** and **overdue** alerts,
   plus events for created / completed / status changes. Shown as a notification bell,
   toasts, and (with permission) desktop notifications.
-- **REST API** — a clean HTTP API over the same database, so any external tool or AI
-  agent can read and manage tasks. (This is the surface you'd wrap in an MCP server later.)
+- **REST API** — a clean HTTP API over the same database, so any external tool can
+  read and manage tasks.
 
-Zero runtime dependencies — it runs on Node's built-in `node:sqlite` and `http` modules.
+Zero runtime dependencies — it runs on Node's built-in `node:sqlite`, `http`, and
+`crypto` modules.
 
 ## Requirements
 
@@ -49,7 +53,28 @@ which starts the server with no console window and logs to `data/autostart.log`.
 
 ## REST API
 
-Base URL: `http://localhost:4000`. All responses are JSON. CORS is open (`*`).
+Base URL: `http://localhost:4000`. All responses are JSON. Requests are same-origin
+and carry the session cookie automatically. Everything except `/api/health` and the
+`/api/auth/*` endpoints **requires a logged-in session cookie** (`sid`).
+
+### Auth
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/auth/register` | Create an account. Body: `{ email, password, name? }`. Sets the session cookie and seeds a sample workspace. |
+| POST | `/api/auth/login` | Body: `{ email, password }`. Sets the session cookie. |
+| POST | `/api/auth/logout` | Clears the session. |
+| GET | `/api/auth/me` | `{ user }` for the current session, or `{ user: null }`. |
+
+```bash
+# Register (cookie jar keeps the session for later calls)
+curl -c jar.txt -X POST http://localhost:4000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"me@example.com","password":"secret123","name":"Me"}'
+
+# Use the session for subsequent requests
+curl -b jar.txt http://localhost:4000/api/state
+```
 
 ### Data shapes
 
@@ -107,6 +132,37 @@ curl "http://localhost:4000/api/stats"
 
 # Watch changes live
 curl -N http://localhost:4000/api/events
+```
+
+## Deploy (persistent host)
+
+This app is a long-running Node server with a **file database** and **live SSE**, so
+it needs a host that keeps a process alive and gives it a persistent disk — e.g.
+**Railway**, **Render**, or **Fly.io**. (It is *not* compatible with serverless
+platforms like Vercel, whose filesystem is ephemeral — the SQLite file would reset
+between requests.)
+
+The one thing that matters everywhere: mount a persistent volume and point
+`TASKLIST_DB` at it, so the database survives restarts and redeploys.
+
+**Environment variables**
+- `PORT` — set by the host automatically; the server reads it.
+- `TASKLIST_DB` — absolute path to the SQLite file on the persistent volume
+  (e.g. `/data/tasklist.db`). The included [`Dockerfile`](Dockerfile) defaults to this.
+
+**Railway** — New Project → Deploy from GitHub → this repo. Add a **Volume** mounted at
+`/data`. Add variable `TASKLIST_DB=/data/tasklist.db`. Deploy.
+
+**Render** — New → Web Service → this repo → Runtime **Docker**. Add a **Disk** mounted
+at `/data`. Add env var `TASKLIST_DB=/data/tasklist.db`.
+
+**Fly.io** — `fly launch` (detects the Dockerfile) → `fly volumes create data` →
+mount it at `/data` in `fly.toml` → set `TASKLIST_DB=/data/tasklist.db` → `fly deploy`.
+
+**Local Docker**
+```bash
+docker build -t tasklist .
+docker run -p 4000:4000 -v tasklist_data:/data tasklist
 ```
 
 ## Project layout

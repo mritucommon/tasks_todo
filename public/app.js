@@ -39,15 +39,24 @@ const ui = {
 let data = { projects: [], tasks: [], notifications: [], stats: {} };
 
 // ---------------------------------------------------------------- api helpers
-async function api(path, opts = {}) {
+async function apiRaw(path, opts = {}) {
   const res = await fetch(API + path, {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
     body: opts.body ? JSON.stringify(opts.body) : undefined,
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) { toast('Error', json.error || res.statusText, '#D24B3E'); throw new Error(json.error || res.statusText); }
+  if (!res.ok) { const err = new Error(json.error || res.statusText); err.status = res.status; throw err; }
   return json;
+}
+// App data calls: surface errors as toasts and bounce to login on 401.
+async function api(path, opts = {}) {
+  try { return await apiRaw(path, opts); }
+  catch (e) {
+    if (e.status === 401) showAuth();
+    else toast('Error', e.message, '#D24B3E');
+    throw e;
+  }
 }
 async function refresh() {
   data = await api('/api/state');
@@ -352,8 +361,10 @@ function desktopNotify(n) {
 }
 
 // ---------------------------------------------------------------- SSE (live)
+let es = null;
 function connectLive() {
-  const es = new EventSource('/api/events');
+  if (es) es.close();
+  es = new EventSource('/api/events');
   const liveEl = $('#live');
   es.addEventListener('hello', () => { liveEl.className = 'live'; liveEl.innerHTML = '<span class="ldot"></span> Live'; });
   es.addEventListener('change', () => refresh());
@@ -369,8 +380,55 @@ function connectLive() {
   es.onerror = () => { liveEl.className = 'live off'; liveEl.innerHTML = '<span class="ldot"></span> Reconnecting…'; };
 }
 
+// ---------------------------------------------------------------- auth
+let authMode = 'login';
+function authError(msg) {
+  const el = $('#auth-error');
+  el.style.display = msg ? 'block' : 'none';
+  el.textContent = msg || '';
+}
+function renderAuthMode() {
+  const reg = authMode === 'register';
+  $('#auth-name').style.display = reg ? 'block' : 'none';
+  $('#auth-sub').textContent = reg ? 'Create your workspace' : 'Sign in to your workspace';
+  $('#auth-submit').textContent = reg ? 'Create account' : 'Sign in';
+  $('#auth-toggle-text').textContent = reg ? 'Already have an account?' : 'New here?';
+  $('#auth-toggle').textContent = reg ? 'Sign in' : 'Create an account';
+  $('#auth-pass').setAttribute('autocomplete', reg ? 'new-password' : 'current-password');
+  authError('');
+}
+async function submitAuth() {
+  const email = $('#auth-email').value.trim();
+  const password = $('#auth-pass').value;
+  const name = $('#auth-name').value.trim();
+  if (!email || !password) { authError('Email and password are required'); return; }
+  try {
+    const path = authMode === 'register' ? '/api/auth/register' : '/api/auth/login';
+    const body = authMode === 'register' ? { email, password, name } : { email, password };
+    const { user } = await apiRaw(path, { method: 'POST', body });
+    $('#auth-pass').value = '';
+    enterApp(user);
+  } catch (e) { authError(e.message); }
+}
+function showAuth() {
+  if (es) { es.close(); es = null; }
+  $('#app').style.display = 'none';
+  $('#userchip').style.display = 'none';
+  $('#auth').style.display = 'flex';
+  $('#auth-email').focus();
+}
+function enterApp(user) {
+  $('#auth').style.display = 'none';
+  $('#app').style.display = 'flex';
+  $('#userchip').style.display = 'inline-flex';
+  $('#uemail').textContent = user.email;
+  $('#uavatar').textContent = (user.name || user.email).trim().charAt(0).toUpperCase() || '?';
+  refresh().then(connectLive);
+}
+
 // ---------------------------------------------------------------- wire up
 function init() {
+  // app controls
   $('#view-list').onclick = () => { ui.view = 'list'; render(); };
   $('#view-kanban').onclick = () => { ui.view = 'kanban'; render(); };
   $('#add-task').onclick = () => { ui.showTaskForm = !ui.showTaskForm; if (ui.showTaskForm && ui.activeProject !== 'all') ui.form.projectId = ui.activeProject; renderTaskComposer(); };
@@ -381,9 +439,17 @@ function init() {
     renderNotifications();
   };
   $('#markall').onclick = () => api('/api/notifications/read-all', { method: 'POST' });
+  $('#logout').onclick = async () => { try { await apiRaw('/api/auth/logout', { method: 'POST' }); } catch {} showAuth(); };
   document.addEventListener('click', e => {
     if (ui.panelOpen && !e.target.closest('.bell')) { ui.panelOpen = false; renderNotifications(); }
   });
-  refresh().then(connectLive);
+
+  // auth controls
+  $('#auth-toggle').onclick = () => { authMode = authMode === 'login' ? 'register' : 'login'; renderAuthMode(); };
+  $('#auth-submit').onclick = submitAuth;
+  ['#auth-email', '#auth-pass', '#auth-name'].forEach(sel => $(sel).addEventListener('keydown', e => { if (e.key === 'Enter') submitAuth(); }));
+
+  // decide which screen to show
+  apiRaw('/api/auth/me').then(({ user }) => { if (user) enterApp(user); else showAuth(); }).catch(showAuth);
 }
 init();

@@ -138,11 +138,50 @@
     .live .ldot { width: 8px; height: 8px; border-radius: 99px; background: #2A8062; }
     .live.off .ldot { background: #D24B3E; }
 
-    @media (max-width: 720px) { .kboard { grid-template-columns: 1fr; } .title { font-size: 30px; } }
+    /* user chip */
+    .userchip { display: inline-flex; align-items: center; gap: 9px; background: #fff; border: 1px solid #E2DDD1;
+      border-radius: 12px; padding: 6px 10px 6px 7px; }
+    .uavatar { width: 30px; height: 30px; border-radius: 8px; background: var(--accent); color: #fff;
+      font-weight: 700; font-size: 14px; display: inline-flex; align-items: center; justify-content: center; }
+    .uemail { font-size: 13px; font-weight: 600; color: #5C554A; max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .logout { border: none; background: #F1EEE6; color: #78715F; font-size: 12.5px; font-weight: 600; padding: 5px 10px; border-radius: 8px; }
+    .logout:hover { background: #E9E4DA; color: #1B1A17; }
+
+    /* auth screen */
+    .authwrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+    .authcard { width: 100%; max-width: 400px; background: #fff; border: 1px solid #EAE6DC; border-radius: 18px;
+      padding: 32px 30px; box-shadow: 0 20px 60px -30px rgba(40,34,20,.4); display: flex; flex-direction: column; gap: 12px; }
+    .autheyebrow { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #A19A8B; }
+    .authtitle { font-size: 30px; font-weight: 700; letter-spacing: -.02em; }
+    .authsub { margin: 0 0 6px; font-size: 14px; color: #A19A8B; }
+    .authfld { width: 100%; font-size: 15px; padding: 12px 13px; }
+    .authbtn { width: 100%; padding: 12px; font-size: 15px; margin-top: 4px; }
+    .authtoggle { display: flex; gap: 6px; justify-content: center; font-size: 13.5px; color: #A19A8B; margin-top: 4px; }
+    .autherr { background: #FBEBE9; color: #C13A2C; border: 1px solid #F3D3CE; border-radius: 9px; padding: 9px 12px; font-size: 13px; }
+
+    @media (max-width: 720px) { .kboard { grid-template-columns: 1fr; } .title { font-size: 30px; } .uemail { display: none; } }
   </style>
 </head>
 <body>
-  <div class="wrap">
+  <!-- Auth screen (shown when logged out) -->
+  <div id="auth" class="authwrap" style="display:none">
+    <div class="authcard">
+      <span class="autheyebrow">My Workspace</span>
+      <h1 class="authtitle">Task list</h1>
+      <p class="authsub" id="auth-sub">Sign in to your workspace</p>
+      <div id="auth-error" class="autherr" style="display:none"></div>
+      <input id="auth-name" class="fld authfld" placeholder="Your name" style="display:none">
+      <input id="auth-email" class="fld authfld" type="email" placeholder="you@example.com" autocomplete="email">
+      <input id="auth-pass" class="fld authfld" type="password" placeholder="Password" autocomplete="current-password">
+      <button id="auth-submit" class="btn-accent authbtn">Sign in</button>
+      <div class="authtoggle">
+        <span id="auth-toggle-text">New here?</span>
+        <button id="auth-toggle" class="link">Create an account</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="wrap" id="app" style="display:none">
     <div class="topbar">
       <div style="display:flex;flex-direction:column;gap:8px;">
         <span class="eyebrow">My Workspace</span>
@@ -166,6 +205,11 @@
             </div>
             <div id="panel-list" class="panel-list"></div>
           </div>
+        </div>
+        <div class="userchip" id="userchip" style="display:none">
+          <span class="uavatar" id="uavatar"></span>
+          <span class="uemail" id="uemail"></span>
+          <button class="logout" id="logout" title="Log out">Log out</button>
         </div>
       </div>
     </div>
