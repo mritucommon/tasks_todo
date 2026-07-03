@@ -1,0 +1,14 @@
+{
+  "name": "task-list-live",
+  "version": "1.0.0",
+  "description": "A living, database-backed task list with a REST API, real-time updates, and due-date notifications. Zero runtime dependencies.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=22.5.0"
+  },
+  "scripts": {
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js"
+  }
+}

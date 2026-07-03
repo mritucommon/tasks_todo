@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    input, select, button, textarea { font-family: 'Instrument Sans', system-ui, sans-serif; }
+    select option { color: #1B1A17; }
+    ::placeholder { color: #B4AD9C; }
+  </style>
+</helmet>
+
+<div style="min-height: 100vh; background: #F7F5F0; font-family: 'Instrument Sans', system-ui, sans-serif; color: #1B1A17; padding: 44px 24px 96px; display: flex; justify-content: center;">
+  <div style="width: 100%; max-width: 1060px; display: flex; flex-direction: column; gap: 22px;">
+
+    <!-- Title row -->
+    <div style="display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; flex-wrap: wrap;">
+      <div style="display: flex; flex-direction: column; gap: 8px;">
+        <span style="font-size: 12px; font-weight: 600; letter-spacing: 0.14em; text-transform: uppercase; color: #A19A8B;">My Workspace</span>
+        <h1 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 36px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.02;">Task list</h1>
+      </div>
+      <div style="display: flex; flex-direction: column; align-items: flex-end; gap: 6px;">
+        <div style="display: flex; align-items: baseline; gap: 8px;">
+          <span style="font-family: 'Space Grotesk', sans-serif; font-size: 28px; font-weight: 700; letter-spacing: -0.02em;">{{ overall.done }}</span>
+          <span style="font-size: 15px; color: #A19A8B; font-weight: 500;">/ {{ overall.total }} done</span>
+        </div>
+        <div style="width: 172px; height: 7px; border-radius: 99px; background: #E6E2D8; overflow: hidden;">
+          <div style="height: 100%; border-radius: 99px; background: {{ accent }}; width: {{ overall.pctStr }};"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Project tabs -->
+    <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-bottom: 16px; border-bottom: 1px solid #E6E2D8;">
+      <sc-for list="{{ projectTabs }}" as="tab" hint-placeholder-count="5">
+        <button onClick="{{ tab.onClick }}" style="display: inline-flex; align-items: center; gap: 8px; border: 1px solid {{ tab.border }}; background: {{ tab.bg }}; color: {{ tab.color }}; font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 99px; cursor: pointer;">
+          <span style="width: 8px; height: 8px; border-radius: 99px; background: {{ tab.dot }}; display: {{ tab.dotDisplay }};"></span>
+          {{ tab.label }}
+          <span style="font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 99px; background: {{ tab.aiBg }}; color: {{ tab.aiColor }}; display: {{ tab.aiDisplay }};">✦ AI</span>
+        </button>
+      </sc-for>
+      <button onClick="{{ toggleProjectForm }}" style="display: inline-flex; align-items: center; gap: 6px; border: 1px dashed #CDC7B7; background: transparent; color: #78715F; font-size: 14px; font-weight: 600; padding: 8px 14px; border-radius: 99px; cursor: pointer;">+ New project</button>
+    </div>
+
+    <!-- New project composer -->
+    <sc-if value="{{ showProjectForm }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: #FFFFFF; border: 1px solid #EAE6DC; border-radius: 14px; padding: 14px 16px; box-shadow: 0 8px 24px -18px rgba(40,34,20,0.25);">
+        <input value="{{ newProjectName }}" onInput="{{ onNewProjectName }}" placeholder="Project name…" style="flex: 1; min-width: 220px; font-size: 15px; font-weight: 500; color: #1B1A17; background: #F7F5F0; border: 1px solid #E2DDD1; border-radius: 9px; padding: 10px 13px; outline: none;">
+        <button onClick="{{ addProject }}" style="font-size: 14px; font-weight: 600; color: #fff; background: {{ accent }}; border: none; border-radius: 9px; padding: 10px 18px; cursor: pointer;">Create project</button>
+        <button onClick="{{ generateAiProject }}" style="display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #6D4FCF; background: #F1ECFB; border: 1px solid #E1D7F7; border-radius: 9px; padding: 10px 15px; cursor: pointer;">✦ Generate with AI</button>
+        <button onClick="{{ toggleProjectForm }}" style="font-size: 14px; font-weight: 600; color: #A19A8B; background: none; border: none; cursor: pointer;">Cancel</button>
+      </div>
+    </sc-if>
+
+    <!-- Toolbar: role filter + view toggle + add task -->
+    <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap;">
+      <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+        <sc-for list="{{ roleChips }}" as="chip" hint-placeholder-count="5">
+          <button onClick="{{ chip.onClick }}" style="display: inline-flex; align-items: center; gap: 7px; border: 1px solid {{ chip.border }}; background: {{ chip.bg }}; color: {{ chip.color }}; font-size: 13.5px; font-weight: 600; padding: 7px 12px; border-radius: 99px; cursor: pointer;">
+            <span style="width: 8px; height: 8px; border-radius: 99px; background: {{ chip.dot }}; display: {{ chip.dotDisplay }};"></span>
+            {{ chip.label }}
+            <span style="font-weight: 500; opacity: 0.6;">{{ chip.count }}</span>
+          </button>
+        </sc-for>
+      </div>
+      <div style="display: flex; align-items: center; gap: 10px;">
+        <div style="display: inline-flex; background: #ECE8DE; border-radius: 10px; padding: 3px;">
+          <button onClick="{{ setListView }}" style="display: inline-flex; align-items: center; gap: 6px; border: none; cursor: pointer; font-size: 13.5px; font-weight: 600; padding: 6px 14px; border-radius: 8px; background: {{ listTabBg }}; color: {{ listTabColor }}; box-shadow: {{ listTabShadow }};">☰ List</button>
+          <button onClick="{{ setKanbanView }}" style="display: inline-flex; align-items: center; gap: 6px; border: none; cursor: pointer; font-size: 13.5px; font-weight: 600; padding: 6px 14px; border-radius: 8px; background: {{ kanbanTabBg }}; color: {{ kanbanTabColor }}; box-shadow: {{ kanbanTabShadow }};">▦ Kanban</button>
+        </div>
+        <button onClick="{{ toggleTaskForm }}" style="font-size: 14px; font-weight: 600; color: #fff; background: #1B1A17; border: none; border-radius: 10px; padding: 9px 16px; cursor: pointer;">+ Add task</button>
+        <button onClick="{{ generateAiTask }}" style="display: inline-flex; align-items: center; gap: 6px; font-size: 14px; font-weight: 600; color: #6D4FCF; background: #F1ECFB; border: 1px solid #E1D7F7; border-radius: 10px; padding: 9px 14px; cursor: pointer;">✦ AI task</button>
+      </div>
+    </div>
+
+    <!-- New task composer -->
+    <sc-if value="{{ showTaskForm }}" hint-placeholder-val="{{ false }}">
+      <div style="display: flex; flex-direction: column; gap: 12px; background: #FFFFFF; border: 1px solid #EAE6DC; border-radius: 14px; padding: 16px; box-shadow: 0 8px 24px -18px rgba(40,34,20,0.25);">
+        <input value="{{ form.title }}" onInput="{{ onFormTitle }}" placeholder="What needs doing?" style="width: 100%; font-size: 16px; font-weight: 600; color: #1B1A17; background: #F7F5F0; border: 1px solid #E2DDD1; border-radius: 9px; padding: 11px 13px; outline: none;">
+        <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+          <select value="{{ form.projectId }}" onChange="{{ onFormProject }}" style="font-size: 14px; font-weight: 600; color: #1B1A17; background: #F7F5F0; border: 1px solid #E2DDD1; border-radius: 9px; padding: 9px 12px; cursor: pointer;">
+            <sc-for list="{{ projectOptions }}" as="opt" hint-placeholder-count="4">
+              <option value="{{ opt.id }}">{{ opt.name }}</option>
+            </sc-for>
+          </select>
+          <select value="{{ form.role }}" onChange="{{ onFormRole }}" style="font-size: 14px; font-weight: 600; color: #1B1A17; background: #F7F5F0; border: 1px solid #E2DDD1; border-radius: 9px; padding: 9px 12px; cursor: pointer;">
+            <option value="dev">Dev</option>
+            <option value="design">Design</option>
+            <option value="marketing">Marketing</option>
+            <option value="seo">SEO</option>
+          </select>
+          <select value="{{ form.prio }}" onChange="{{ onFormPrio }}" style="font-size: 14px; font-weight: 600; color: #1B1A17; background: #F7F5F0; border: 1px solid #E2DDD1; border-radius: 9px; padding: 9px 12px; cursor: pointer;">
+            <option value="high">High priority</option>
+            <option value="med">Medium priority</option>
+            <option value="low">Low priority</option>
+          </select>
+          <input value="{{ form.due }}" onInput="{{ onFormDue }}" placeholder="Due (e.g. Jul 20)" style="width: 140px; font-size: 14px; font-weight: 500; color: #1B1A17; background: #F7F5F0; border: 1px solid #E2DDD1; border-radius: 9px; padding: 9px 12px; outline: none;">
+          <div style="flex: 1;"></div>
+          <button onClick="{{ addTask }}" style="font-size: 14px; font-weight: 600; color: #fff; background: {{ accent }}; border: none; border-radius: 9px; padding: 10px 18px; cursor: pointer;">Add task</button>
+        </div>
+      </div>
+    </sc-if>
+
+    <!-- LIST VIEW -->
+    <sc-if value="{{ isList }}" hint-placeholder-val="{{ true }}">
+      <div style="display: flex; flex-direction: column; gap: 18px;">
+        <sc-for list="{{ listProjects }}" as="proj" hint-placeholder-count="4">
+          <section style="background: #FFFFFF; border: 1px solid #EAE6DC; border-radius: 16px; overflow: hidden; box-shadow: 0 1px 2px rgba(40,34,20,0.03), 0 8px 24px -18px rgba(40,34,20,0.18);">
+            <div style="display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 22px; border-bottom: 1px solid #F0ECE3;">
+              <div style="display: flex; align-items: center; gap: 14px; min-width: 0;">
+                <span style="width: 10px; height: 32px; border-radius: 4px; background: {{ proj.color }}; flex-shrink: 0;"></span>
+                <div style="display: flex; flex-direction: column; gap: 2px; min-width: 0;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <h2 style="margin: 0; font-family: 'Space Grotesk', sans-serif; font-size: 18px; font-weight: 600; letter-spacing: -0.01em;">{{ proj.name }}</h2>
+                    <span style="font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 99px; background: #F1ECFB; color: #6D4FCF; display: {{ proj.aiDisplay }};">✦ AI</span>
+                  </div>
+                  <span style="font-size: 13px; color: #A19A8B; font-weight: 500;">{{ proj.subtitle }}</span>
+                </div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 14px; flex-shrink: 0;">
+                <span style="font-size: 13px; color: #78715F; font-weight: 600; white-space: nowrap;">{{ proj.done }}/{{ proj.total }}</span>
+                <div style="width: 76px; height: 6px; border-radius: 99px; background: #EEEAE0; overflow: hidden;">
+                  <div style="height: 100%; border-radius: 99px; background: {{ proj.color }}; width: {{ proj.pctStr }};"></div>
+                </div>
+              </div>
+            </div>
+            <sc-if value="{{ proj.hasTasks }}" hint-placeholder-val="{{ true }}">
+              <ul style="list-style: none; margin: 0; padding: 6px 0;">
+                <sc-for list="{{ proj.tasks }}" as="t" hint-placeholder-count="5">
+                  <li style="display: flex; align-items: center; gap: 14px; padding: 11px 22px; border-bottom: 1px solid #F5F2EB;">
+                    <button onClick="{{ t.onCycle }}" title="{{ t.statusLabel }}" style="width: 21px; height: 21px; flex-shrink: 0; border-radius: 99px; border: 1.75px solid {{ t.checkBorder }}; background: {{ t.checkBg }}; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; color: {{ t.checkTextColor }}; font-size: 13px; line-height: 1; padding: 0;">{{ t.check }}</button>
+                    <span style="flex: 1; min-width: 0; font-size: 15px; font-weight: 500; line-height: 1.35; color: {{ t.titleColor }}; text-decoration: {{ t.strike }}; text-decoration-color: #C9C3B4;">{{ t.title }}</span>
+                    <span style="font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: #F1ECFB; color: #6D4FCF; flex-shrink: 0; display: {{ t.aiDisplay }};">✦ AI</span>
+                    <span style="font-size: 11.5px; font-weight: 600; padding: 3px 9px; border-radius: 99px; background: {{ t.statusBg }}; color: {{ t.statusColor }}; flex-shrink: 0; display: {{ t.inProgDisplay }};">In progress</span>
+                    <span style="display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;">
+                      <span style="width: 7px; height: 7px; border-radius: 99px; background: {{ t.prioColor }};" title="{{ t.prioLabel }}"></span>
+                      <span style="font-size: 12.5px; color: #A19A8B; font-weight: 500; min-width: 48px; text-align: right;">{{ t.due }}</span>
+                    </span>
+                    <span style="display: inline-flex; align-items: center; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 99px; background: {{ t.roleBg }}; color: {{ t.roleColor }}; flex-shrink: 0; min-width: 74px; justify-content: center;">{{ t.roleLabel }}</span>
+                  </li>
+                </sc-for>
+              </ul>
+            </sc-if>
+            <sc-if value="{{ proj.empty }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 20px 22px; font-size: 14px; color: #B4AD9C; font-style: italic;">No tasks match this filter.</div>
+            </sc-if>
+          </section>
+        </sc-for>
+      </div>
+    </sc-if>
+
+    <!-- KANBAN VIEW -->
+    <sc-if value="{{ isKanban }}" hint-placeholder-val="{{ false }}">
+      <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; align-items: start;">
+        <sc-for list="{{ columns }}" as="col" hint-placeholder-count="3">
+          <div style="display: flex; flex-direction: column; gap: 12px; background: #F1EEE6; border: 1px solid #E6E2D8; border-radius: 16px; padding: 14px; min-height: 140px;">
+            <div style="display: flex; align-items: center; gap: 9px; padding: 2px 4px;">
+              <span style="width: 9px; height: 9px; border-radius: 99px; background: {{ col.color }};"></span>
+              <span style="font-family: 'Space Grotesk', sans-serif; font-size: 14px; font-weight: 600; letter-spacing: 0.01em;">{{ col.label }}</span>
+              <span style="font-size: 12px; font-weight: 600; color: #A19A8B;">{{ col.count }}</span>
+            </div>
+            <sc-for list="{{ col.tasks }}" as="t" hint-placeholder-count="3">
+              <div style="display: flex; flex-direction: column; gap: 9px; background: #FFFFFF; border: 1px solid #EAE6DC; border-radius: 12px; padding: 12px 13px; box-shadow: 0 1px 2px rgba(40,34,20,0.04);">
+                <div style="display: flex; align-items: center; gap: 7px;">
+                  <span style="width: 8px; height: 8px; border-radius: 3px; background: {{ t.projColor }}; flex-shrink: 0;"></span>
+                  <span style="font-size: 11.5px; font-weight: 600; color: #A19A8B; text-transform: uppercase; letter-spacing: 0.04em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">{{ t.projShort }}</span>
+                  <span style="font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 99px; background: #F1ECFB; color: #6D4FCF; margin-left: auto; display: {{ t.aiDisplay }};">✦ AI</span>
+                </div>
+                <span style="font-size: 14.5px; font-weight: 600; line-height: 1.3; color: {{ t.titleColor }}; text-decoration: {{ t.strike }}; text-decoration-color: #C9C3B4;">{{ t.title }}</span>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 99px; background: {{ t.roleBg }}; color: {{ t.roleColor }};">{{ t.roleLabel }}</span>
+                  <span style="width: 6px; height: 6px; border-radius: 99px; background: {{ t.prioColor }};"></span>
+                  <span style="font-size: 12px; color: #A19A8B; font-weight: 500;">{{ t.due }}</span>
+                  <div style="flex: 1;"></div>
+                  <button onClick="{{ t.onLeft }}" style="width: 24px; height: 24px; border-radius: 7px; border: 1px solid #E6E2D8; background: #FBFAF7; color: {{ t.leftColor }}; cursor: {{ t.leftCursor }}; font-size: 13px; line-height: 1; padding: 0;">‹</button>
+                  <button onClick="{{ t.onRight }}" style="width: 24px; height: 24px; border-radius: 7px; border: 1px solid #E6E2D8; background: #FBFAF7; color: {{ t.rightColor }}; cursor: {{ t.rightCursor }}; font-size: 13px; line-height: 1; padding: 0;">›</button>
+                </div>
+              </div>
+            </sc-for>
+            <sc-if value="{{ col.empty }}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 14px 6px; font-size: 13px; color: #B4AD9C; font-style: italic;">Nothing here.</div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1108,&quot;height&quot;:940},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#B4471F&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#B4471F&quot;,&quot;#3E52C9&quot;,&quot;#2A8062&quot;,&quot;#1B1A17&quot;]}}">
+class Component extends DCLogic {
+  ROLE_META = {
+    dev:       { label: 'Dev',       color: '#3E52C9', bg: '#ECEEFB' },
+    design:    { label: 'Design',    color: '#A93C93', bg: '#FAEBF6' },
+    marketing: { label: 'Marketing', color: '#B7671A', bg: '#FAF0E4' },
+    seo:       { label: 'SEO',       color: '#2A8062', bg: '#E7F4EE' },
+  };
+  PRIO = {
+    high: { label: 'High',   color: '#D24B3E' },
+    med:  { label: 'Medium', color: '#E0982A' },
+    low:  { label: 'Low',    color: '#B7B0A0' },
+  };
+  STATUS = {
+    todo:       { label: 'To Do',       color: '#8C8574', bg: '#EFEBE1' },
+    inprogress: { label: 'In Progress', color: '#B07514', bg: '#FAF0E0' },
+    done:       { label: 'Done',        color: '#2A8062', bg: '#E7F4EE' },
+  };
+  ORDER = ['todo', 'inprogress', 'done'];
+  PALETTE = ['#3E52C9', '#A93C93', '#B7671A', '#2A8062', '#6D5BD0', '#0E7C86', '#C23B5B'];
+  AI_TASKS = {
+    dev:       ['Add end-to-end tests for the checkout flow', 'Set up error monitoring with Sentry', 'Refactor auth to use refresh tokens', 'Add lazy-loading for below-the-fold images'],
+    design:    ['Design empty & error states', 'Run an accessibility contrast audit', 'Create a reusable icon set', 'Prototype the settings screen'],
+    marketing: ['Draft a launch thread for social', 'Outline a customer case study', 'Plan a webinar to drive signups', 'Write a monthly product-update email'],
+    seo:       ['Build an internal linking map', 'Optimize title tags for top pages', 'Fix crawl errors in Search Console', 'Create an FAQ schema block'],
+  };
+  AI_PROJECTS = ['Q4 Newsletter Revamp', 'Portfolio Site v2', 'Podcast Launch', 'Analytics Dashboard', 'Community Forum'];
+
+  state = {
+    view: 'list',
+    activeProject: 'all',
+    roleFilter: 'all',
+    showTaskForm: false,
+    showProjectForm: false,
+    form: { title: '', projectId: 'aurora', role: 'dev', prio: 'med', due: '' },
+    newProjectName: '',
+    nextId: 100,
+    nextPid: 1,
+    projects: [
+      { id: 'aurora', name: 'Aurora — SaaS Marketing Site', subtitle: 'Own product · launching Q3', color: '#3E52C9' },
+      { id: 'finch',  name: 'Finch — Mobile App Launch',    subtitle: 'Own product · App Store rollout', color: '#A93C93' },
+      { id: 'nordic', name: 'Nordic Coffee — Brand Refresh', subtitle: 'Client work · retainer', color: '#B7671A' },
+      { id: 'growth', name: 'Growth & Ops',                 subtitle: 'Internal · ongoing', color: '#2A8062' },
+    ],
+    tasks: [
+      { id: 1,  projectId: 'aurora', role: 'dev',       prio: 'high', due: 'Jul 5',  title: 'Scaffold Next.js + Tailwind project', status: 'done' },
+      { id: 2,  projectId: 'aurora', role: 'design',    prio: 'high', due: 'Jul 6',  title: 'Design hero + feature sections in Figma', status: 'done' },
+      { id: 3,  projectId: 'aurora', role: 'design',    prio: 'med',  due: 'Jul 9',  title: 'Define color & type tokens for the site', status: 'inprogress' },
+      { id: 4,  projectId: 'aurora', role: 'dev',       prio: 'med',  due: 'Jul 11', title: 'Build responsive nav with mobile menu', status: 'todo' },
+      { id: 5,  projectId: 'aurora', role: 'seo',       prio: 'high', due: 'Jul 8',  title: 'Keyword research for landing pages', status: 'inprogress' },
+      { id: 6,  projectId: 'aurora', role: 'marketing', prio: 'med',  due: 'Jul 12', title: 'Draft 3 homepage headline variants', status: 'todo' },
+      { id: 7,  projectId: 'aurora', role: 'seo',       prio: 'low',  due: 'Jul 15', title: 'Add schema markup & meta descriptions', status: 'todo' },
+      { id: 8,  projectId: 'aurora', role: 'dev',       prio: 'low',  due: 'Jul 16', title: 'Wire up analytics & cookie consent', status: 'todo' },
+      { id: 9,  projectId: 'finch',  role: 'design',    prio: 'high', due: 'Jul 7',  title: 'Finalize onboarding flow screens', status: 'inprogress' },
+      { id: 10, projectId: 'finch',  role: 'dev',       prio: 'high', due: 'Jul 4',  title: 'Fix login crash on Android 14', status: 'todo' },
+      { id: 11, projectId: 'finch',  role: 'dev',       prio: 'med',  due: 'Jul 10', title: 'Implement push notifications', status: 'todo' },
+      { id: 12, projectId: 'finch',  role: 'design',    prio: 'med',  due: 'Jul 6',  title: 'Export app icon in all required sizes', status: 'done' },
+      { id: 13, projectId: 'finch',  role: 'marketing', prio: 'high', due: 'Jul 13', title: 'Plan App Store launch campaign', status: 'todo' },
+      { id: 14, projectId: 'finch',  role: 'marketing', prio: 'med',  due: 'Jul 11', title: 'Write App Store listing copy', status: 'todo' },
+      { id: 15, projectId: 'finch',  role: 'seo',       prio: 'med',  due: 'Jul 12', title: 'Optimize App Store keywords (ASO)', status: 'todo' },
+      { id: 16, projectId: 'nordic', role: 'design',    prio: 'high', due: 'Jun 30', title: 'Present 3 logo directions to client', status: 'done' },
+      { id: 17, projectId: 'nordic', role: 'design',    prio: 'med',  due: 'Jul 9',  title: 'Build brand guidelines PDF', status: 'inprogress' },
+      { id: 18, projectId: 'nordic', role: 'dev',       prio: 'med',  due: 'Jul 14', title: 'Build Shopify product page templates', status: 'todo' },
+      { id: 19, projectId: 'nordic', role: 'marketing', prio: 'med',  due: 'Jul 10', title: 'Plan Instagram content calendar', status: 'todo' },
+      { id: 20, projectId: 'nordic', role: 'seo',       prio: 'low',  due: 'Jul 2',  title: 'Audit current site rankings', status: 'done' },
+      { id: 21, projectId: 'nordic', role: 'marketing', prio: 'low',  due: 'Jul 17', title: 'Design email newsletter template', status: 'todo' },
+      { id: 22, projectId: 'growth', role: 'seo',       prio: 'med',  due: 'Jul 8',  title: 'Compile monthly SEO report', status: 'inprogress' },
+      { id: 23, projectId: 'growth', role: 'seo',       prio: 'high', due: 'Jul 7',  title: 'Fix broken backlinks flagged in audit', status: 'todo' },
+      { id: 24, projectId: 'growth', role: 'marketing', prio: 'med',  due: 'Jul 15', title: 'A/B test pricing page CTA copy', status: 'todo' },
+      { id: 25, projectId: 'growth', role: 'marketing', prio: 'med',  due: 'Jul 20', title: 'Launch customer referral program', status: 'todo' },
+      { id: 26, projectId: 'growth', role: 'dev',       prio: 'low',  due: 'Jul 22', title: 'Migrate blog to a headless CMS', status: 'todo' },
+      { id: 27, projectId: 'growth', role: 'dev',       prio: 'med',  due: 'Jul 1',  title: 'Set up CI/CD deploy pipeline', status: 'done' },
+      { id: 28, projectId: 'growth', role: 'design',    prio: 'low',  due: 'Jul 18', title: 'Refresh the pitch deck template', status: 'todo' },
+    ],
+  };
+
+  // --- mutations ---
+  setRole(r) { this.setState({ roleFilter: r }); }
+  setActiveProject(id) { this.setState({ activeProject: id }); }
+  cycleStatus(id) {
+    this.setState(s => ({ tasks: s.tasks.map(t => t.id === id ? { ...t, status: this.ORDER[(this.ORDER.indexOf(t.status) + 1) % 3] } : t) }));
+  }
+  moveTask(id, dir) {
+    this.setState(s => ({ tasks: s.tasks.map(t => {
+      if (t.id !== id) return t;
+      const i = Math.max(0, Math.min(2, this.ORDER.indexOf(t.status) + dir));
+      return { ...t, status: this.ORDER[i] };
+    }) }));
+  }
+  addTask() {
+    const f = this.state.form;
+    if (!f.title.trim()) return;
+    this.setState(s => ({
+      tasks: [...s.tasks, { id: s.nextId, projectId: f.projectId, role: f.role, prio: f.prio, due: f.due.trim() || '—', title: f.title.trim(), status: 'todo' }],
+      nextId: s.nextId + 1,
+      showTaskForm: false,
+      form: { ...f, title: '', due: '' },
+    }));
+  }
+  addProject() {
+    const name = this.state.newProjectName.trim();
+    if (!name) return;
+    this.setState(s => {
+      const id = 'p' + s.nextPid;
+      return {
+        projects: [...s.projects, { id, name, subtitle: 'New project', color: this.PALETTE[s.projects.length % this.PALETTE.length] }],
+        nextPid: s.nextPid + 1,
+        newProjectName: '',
+        showProjectForm: false,
+        activeProject: id,
+      };
+    });
+  }
+  generateAiTask() {
+    const roles = ['dev', 'design', 'marketing', 'seo'];
+    this.setState(s => {
+      const role = s.roleFilter !== 'all' ? s.roleFilter : roles[Math.floor(Math.random() * 4)];
+      const pool = this.AI_TASKS[role];
+      const pid = s.activeProject !== 'all' ? s.activeProject : s.projects[Math.floor(Math.random() * s.projects.length)].id;
+      const used = s.tasks.map(t => t.title);
+      const title = pool.find(x => !used.includes(x)) || pool[Math.floor(Math.random() * pool.length)];
+      const dues = ['Jul 21', 'Jul 24', 'Jul 28', 'Aug 1', 'Aug 5'];
+      const prios = ['high', 'med', 'low'];
+      return {
+        tasks: [...s.tasks, { id: s.nextId, projectId: pid, role, prio: prios[Math.floor(Math.random() * 3)], due: dues[Math.floor(Math.random() * dues.length)], title, status: 'todo', ai: true }],
+        nextId: s.nextId + 1,
+      };
+    });
+  }
+  generateAiProject() {
+    this.setState(s => {
+      const used = s.projects.map(p => p.name);
+      const name = this.AI_PROJECTS.find(x => !used.includes(x)) || (this.AI_PROJECTS[0] + ' ' + s.nextPid);
+      const id = 'p' + s.nextPid;
+      return {
+        projects: [...s.projects, { id, name, subtitle: 'Generated by AI', color: this.PALETTE[s.projects.length % this.PALETTE.length], ai: true }],
+        nextPid: s.nextPid + 1,
+        showProjectForm: false,
+        newProjectName: '',
+        activeProject: id,
+      };
+    });
+  }
+
+  renderVals() {
+    const accent = this.props.accent ?? '#B4471F';
+    const s = this.state;
+    const { tasks, projects, roleFilter, activeProject, view, form } = s;
+    const projById = Object.fromEntries(projects.map(p => [p.id, p]));
+
+    const overallDone = tasks.filter(t => t.status === 'done').length;
+    const overall = { done: overallDone, total: tasks.length, pctStr: Math.round((overallDone / (tasks.length || 1)) * 100) + '%' };
+
+    // Project tabs
+    const projectTabs = [{ id: 'all', name: 'All projects', color: '#1B1A17', ai: false }, ...projects].map(p => {
+      const active = activeProject === p.id;
+      const isAll = p.id === 'all';
+      return {
+        label: p.name, onClick: () => this.setActiveProject(p.id),
+        dot: isAll ? 'transparent' : p.color, dotDisplay: isAll ? 'none' : 'inline-block',
+        bg: active ? (isAll ? '#1B1A17' : p.color) : '#FFFFFF',
+        color: active ? '#FFFFFF' : '#5C554A',
+        border: active ? 'transparent' : '#E2DDD1',
+        aiDisplay: p.ai ? 'inline-flex' : 'none',
+        aiBg: active ? 'rgba(255,255,255,0.22)' : '#F1ECFB',
+        aiColor: active ? '#FFFFFF' : '#6D4FCF',
+      };
+    });
+
+    // Role chips
+    const roleOrder = ['all', 'dev', 'design', 'marketing', 'seo'];
+    const scoped = tasks.filter(t => activeProject === 'all' || t.projectId === activeProject);
+    const roleChips = roleOrder.map(key => {
+      const active = roleFilter === key;
+      const meta = key === 'all' ? { label: 'All', color: '#1B1A17' } : this.ROLE_META[key];
+      const count = key === 'all' ? scoped.length : scoped.filter(t => t.role === key).length;
+      return {
+        label: meta.label, count, onClick: () => this.setRole(key),
+        dot: key === 'all' ? 'transparent' : meta.color, dotDisplay: key === 'all' ? 'none' : 'inline-block',
+        bg: active ? (key === 'all' ? '#1B1A17' : meta.bg) : '#FFFFFF',
+        color: active ? (key === 'all' ? '#FFFFFF' : meta.color) : '#5C554A',
+        border: active ? 'transparent' : '#E2DDD1',
+      };
+    });
+
+    const roleOk = t => roleFilter === 'all' || t.role === roleFilter;
+    const projOk = t => activeProject === 'all' || t.projectId === activeProject;
+
+    const decorate = t => {
+      const rm = this.ROLE_META[t.role];
+      const pr = projById[t.projectId] || {};
+      const st = this.STATUS[t.status];
+      const done = t.status === 'done';
+      const inprog = t.status === 'inprogress';
+      const i = this.ORDER.indexOf(t.status);
+      return {
+        ...t,
+        roleLabel: rm.label, roleColor: rm.color, roleBg: rm.bg,
+        prioLabel: this.PRIO[t.prio].label, prioColor: this.PRIO[t.prio].color,
+        statusLabel: st.label, statusColor: st.color, statusBg: st.bg,
+        inProgDisplay: inprog ? 'inline-flex' : 'none',
+        aiDisplay: t.ai ? 'inline-flex' : 'none',
+        projName: pr.name, projShort: (pr.name || '').split(' — ')[0], projColor: pr.color,
+        titleColor: done ? '#B0A99A' : '#1B1A17',
+        strike: done ? 'line-through' : 'none',
+        check: done ? '✓' : (inprog ? '•' : ''),
+        checkTextColor: done ? '#FFFFFF' : accent,
+        checkBg: done ? accent : '#FFFFFF',
+        checkBorder: done ? accent : (inprog ? accent : '#D2CCBD'),
+        onCycle: () => this.cycleStatus(t.id),
+        onLeft: () => this.moveTask(t.id, -1),
+        onRight: () => this.moveTask(t.id, 1),
+        leftColor: i === 0 ? '#D6D0C2' : '#78715F', leftCursor: i === 0 ? 'default' : 'pointer',
+        rightColor: i === 2 ? '#D6D0C2' : '#78715F', rightCursor: i === 2 ? 'default' : 'pointer',
+      };
+    };
+
+    // List view: projects grouped
+    const shownProjects = projects.filter(p => activeProject === 'all' || p.id === activeProject);
+    const listProjects = shownProjects.map(p => {
+      const all = tasks.filter(t => t.projectId === p.id);
+      const done = all.filter(t => t.status === 'done').length;
+      const shown = all.filter(roleOk).map(decorate);
+      return {
+        ...p, done, total: all.length,
+        pctStr: Math.round((done / (all.length || 1)) * 100) + '%',
+        tasks: shown, hasTasks: shown.length > 0, empty: shown.length === 0,
+        aiDisplay: p.ai ? 'inline-flex' : 'none',
+      };
+    });
+
+    // Kanban columns
+    const kanbanTasks = tasks.filter(t => projOk(t) && roleOk(t));
+    const columns = this.ORDER.map(key => {
+      const st = this.STATUS[key];
+      const list = kanbanTasks.filter(t => t.status === key).map(decorate);
+      return { key, label: st.label, color: st.color, tasks: list, count: list.length, empty: list.length === 0 };
+    });
+
+    const projectOptions = projects.map(p => ({ id: p.id, name: p.name }));
+
+    const seg = on => ({
+      bg: on ? '#FFFFFF' : 'transparent',
+      color: on ? '#1B1A17' : '#8C8574',
+      shadow: on ? '0 1px 3px rgba(40,34,20,0.14)' : 'none',
+    });
+    const l = seg(view === 'list'), k = seg(view === 'kanban');
+
+    return {
+      accent, overall, projectTabs, roleChips, projectOptions,
+      isList: view === 'list', isKanban: view === 'kanban',
+      listProjects, columns,
+      listTabBg: l.bg, listTabColor: l.color, listTabShadow: l.shadow,
+      kanbanTabBg: k.bg, kanbanTabColor: k.color, kanbanTabShadow: k.shadow,
+      setListView: () => this.setState({ view: 'list' }),
+      setKanbanView: () => this.setState({ view: 'kanban' }),
+      showTaskForm: s.showTaskForm, showProjectForm: s.showProjectForm,
+      toggleTaskForm: () => this.setState(st => ({ showTaskForm: !st.showTaskForm, form: { ...st.form, projectId: activeProject !== 'all' ? activeProject : (st.form.projectId || projects[0].id) } })),
+      toggleProjectForm: () => this.setState(st => ({ showProjectForm: !st.showProjectForm })),
+      form,
+      onFormTitle: e => this.setState(st => ({ form: { ...st.form, title: e.target.value } })),
+      onFormProject: e => this.setState(st => ({ form: { ...st.form, projectId: e.target.value } })),
+      onFormRole: e => this.setState(st => ({ form: { ...st.form, role: e.target.value } })),
+      onFormPrio: e => this.setState(st => ({ form: { ...st.form, prio: e.target.value } })),
+      onFormDue: e => this.setState(st => ({ form: { ...st.form, due: e.target.value } })),
+      addTask: () => this.addTask(),
+      newProjectName: s.newProjectName,
+      onNewProjectName: e => this.setState({ newProjectName: e.target.value }),
+      addProject: () => this.addProject(),
+      generateAiTask: () => this.generateAiTask(),
+      generateAiProject: () => this.generateAiProject(),
+    };
+  }
+}
+</script>
+</body>
+</html>
