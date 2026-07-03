@@ -150,6 +150,20 @@ curl -b jar.txt http://localhost:4000/api/state
 | GET | `/api/analytics/summary` | Totals, per-project/role breakdown, recent completions. Query `scope=me` (default) or `scope=all` (admin only). |
 | GET | `/api/analytics/contributions` | Task completions grouped by day for the heatmap. Query `scope`, `days` (default 371). |
 
+### Team chat
+
+Open **`/chat.html`** (💬 in the app header) for 1:1 chat between accounts:
+
+- Fast polling (~1s) + optimistic send, **typing indicators**, and **read receipts** (✓✓).
+- **Edit**, **delete**, and **forward** messages; **share a task** from any project as a
+  card in the conversation. History is grouped by day with timestamps.
+- API: `GET /api/chat/contacts`, `GET /api/chat/poll?peer=<id>`,
+  `POST /api/chat/messages`, `PATCH|DELETE /api/chat/messages/:id`,
+  `POST /api/chat/forward`, `POST /api/chat/share`, `POST /api/chat/typing`.
+
+For chat to be useful, employees connect to the **same** deployed server (not each
+person's localhost) — deploy once (Turso + Vercel, or a persistent host) and share the URL.
+
 ### Dashboard / admin
 
 Open **`/admin.html`** (📊 in the app header) for an analytics dashboard: a

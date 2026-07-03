@@ -190,6 +190,29 @@ export async function handleApi(req, res) {
       }), true;
     }
 
+    // chat (1:1 direct messages)
+    if (pathname === '/api/chat/contacts' && method === 'GET') return ok(res, await db.chatContacts(uid)), true;
+    if (pathname === '/api/chat/poll' && method === 'GET') {
+      const peer = Number(sp.get('peer'));
+      if (peer) await db.markChatRead(uid, peer);
+      return ok(res, {
+        messages: peer ? await db.chatConversation(uid, peer, 150) : [],
+        peerTyping: peer ? await db.peerTyping(uid, peer) : false,
+        contacts: await db.chatContacts(uid),
+      }), true;
+    }
+    if (pathname === '/api/chat/messages' && method === 'POST') return send(res, 201, await db.sendMessage(uid, await readBody(req))), true;
+    if (pathname === '/api/chat/forward' && method === 'POST') { const b = await readBody(req); return ok(res, await db.forwardMessage(uid, Number(b.id), Number(b.to))), true; }
+    if (pathname === '/api/chat/share' && method === 'POST') return send(res, 201, await db.shareTask(uid, await readBody(req))), true;
+    if (pathname === '/api/chat/typing' && method === 'POST') { const b = await readBody(req); await db.setTyping(uid, Number(b.to)); return ok(res, { ok: true }), true; }
+    if (pathname === '/api/chat/read' && method === 'POST') { const b = await readBody(req); await db.markChatRead(uid, Number(b.peer)); return ok(res, { ok: true }), true; }
+    m = pathname.match(/^\/api\/chat\/messages\/(\d+)$/);
+    if (m) {
+      const id = Number(m[1]);
+      if (method === 'PATCH') { const b = await readBody(req); return ok(res, await db.editMessage(uid, id, b.body)), true; }
+      if (method === 'DELETE') return ok(res, await db.deleteMessage(uid, id)), true;
+    }
+
     return bad(res, `No route: ${method} ${pathname}`, 404), true;
   } catch (err) {
     return bad(res, err.message || 'Server error', 400), true;

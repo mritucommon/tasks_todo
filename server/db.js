@@ -65,8 +65,16 @@ export function ready() {
     CREATE INDEX IF NOT EXISTS idx_projects_user ON projects(user_id);
     CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
     CREATE INDEX IF NOT EXISTS idx_notif_user ON notifications(user_id, read);
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT, sender_id INTEGER NOT NULL, recipient_id INTEGER NOT NULL,
+      body TEXT NOT NULL, forwarded_from INTEGER, task_id INTEGER, task_json TEXT,
+      created_at TEXT NOT NULL, edited_at TEXT, deleted INTEGER NOT NULL DEFAULT 0, read_at TEXT);
+    CREATE TABLE IF NOT EXISTS chat_typing (
+      user_id INTEGER NOT NULL, peer_id INTEGER NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY(user_id, peer_id));
     CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+    CREATE INDEX IF NOT EXISTS idx_msg_pair ON messages(sender_id, recipient_id, id);
+    CREATE INDEX IF NOT EXISTS idx_msg_recip ON messages(recipient_id, read_at);
   `);
     // migration: add is_admin to existing databases (ignored if it already exists)
     try { await client().execute('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0'); } catch {}
@@ -367,6 +375,7 @@ export async function stats(userId) {
     pct: Math.round((done / (tasks.length || 1)) * 100),
     projects: (await listProjects(userId)).length,
     unread: await unreadCount(userId),
+    chatUnread: await chatUnreadTotal(userId),
   };
 }
 
@@ -409,6 +418,112 @@ export async function recentCompletions(userId, limit = 12) {
     WHERE ${w}t.status='done' AND t.completed_at IS NOT NULL ORDER BY t.completed_at DESC LIMIT ?`, [...a, limit]);
   return rows.map(r => ({ title: r.title, project: r.proj, email: r.email, completedAt: r.completed_at }));
 }
+
+// ---------------------------------------------------------------- chat (1:1 DMs)
+const rowToMsg = (r, meId) => {
+  if (!r) return null;
+  let task = null;
+  if (r.task_json && !r.deleted) { try { task = JSON.parse(r.task_json); } catch {} }
+  return {
+    id: r.id, senderId: r.sender_id, recipientId: r.recipient_id,
+    body: r.deleted ? null : r.body, deleted: !!r.deleted,
+    forwardedFrom: r.forwarded_from || null, task,
+    mine: r.sender_id === meId, read: !!r.read_at,
+    edited: !!r.edited_at, createdAt: r.created_at,
+  };
+};
+const TYPING_WINDOW_MS = 5000;
+
+export async function chatContacts(meId) {
+  const users = await all('SELECT id, email, name FROM users WHERE id != ? ORDER BY name, email', [meId]);
+  const out = [];
+  for (const u of users) {
+    const last = await get(
+      `SELECT body, deleted, created_at, sender_id FROM messages
+       WHERE (sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?) ORDER BY id DESC LIMIT 1`,
+      [meId, u.id, u.id, meId]);
+    const unread = (await get('SELECT COUNT(*) c FROM messages WHERE recipient_id=? AND sender_id=? AND read_at IS NULL AND deleted=0', [meId, u.id])).c;
+    out.push({
+      id: u.id, email: u.email, name: u.name || u.email.split('@')[0],
+      lastMessage: last ? (last.deleted ? 'Message deleted' : last.body) : '',
+      lastAt: last ? last.created_at : null,
+      lastMine: last ? last.sender_id === meId : false,
+      unread,
+    });
+  }
+  out.sort((a, b) => (b.lastAt || '').localeCompare(a.lastAt || ''));
+  return out;
+}
+export async function chatConversation(meId, peerId, limit = 120) {
+  const rows = await all(
+    `SELECT * FROM messages WHERE (sender_id=? AND recipient_id=?) OR (sender_id=? AND recipient_id=?)
+     ORDER BY id DESC LIMIT ?`, [meId, peerId, peerId, meId, limit]);
+  return rows.reverse().map(r => rowToMsg(r, meId));
+}
+export async function sendMessage(meId, { to, body, forwardOf = null } = {}) {
+  const rid = Number(to);
+  if (!rid || !(await getUserById(rid))) throw new Error('Unknown recipient');
+  if (!body || !String(body).trim()) throw new Error('Message is empty');
+  const info = await run('INSERT INTO messages (sender_id,recipient_id,body,forwarded_from,created_at) VALUES (?,?,?,?,?)',
+    [meId, rid, String(body).trim(), forwardOf || null, nowIso()]);
+  await run('DELETE FROM chat_typing WHERE user_id=? AND peer_id=?', [meId, rid]);
+  return rowToMsg(await get('SELECT * FROM messages WHERE id=?', [Number(info.lastInsertRowid)]), meId);
+}
+export async function editMessage(meId, id, body) {
+  const m = await get('SELECT * FROM messages WHERE id=?', [id]);
+  if (!m || m.sender_id !== meId) throw new Error('Message not found');
+  if (m.deleted) throw new Error('Cannot edit a deleted message');
+  if (!body || !String(body).trim()) throw new Error('Message is empty');
+  await run('UPDATE messages SET body=?, edited_at=? WHERE id=?', [String(body).trim(), nowIso(), id]);
+  return rowToMsg(await get('SELECT * FROM messages WHERE id=?', [id]), meId);
+}
+export async function deleteMessage(meId, id) {
+  const m = await get('SELECT * FROM messages WHERE id=?', [id]);
+  if (!m || m.sender_id !== meId) throw new Error('Message not found');
+  await run('UPDATE messages SET deleted=1 WHERE id=?', [id]);
+  return rowToMsg(await get('SELECT * FROM messages WHERE id=?', [id]), meId);
+}
+export async function forwardMessage(meId, id, to) {
+  const m = await get('SELECT * FROM messages WHERE id=?', [id]);
+  if (!m || (m.sender_id !== meId && m.recipient_id !== meId)) throw new Error('Message not found');
+  if (m.deleted) throw new Error('Cannot forward a deleted message');
+  // forward keeps a shared-task card if the original had one
+  if (m.task_json) {
+    const rid = Number(to);
+    if (!rid || !(await getUserById(rid))) throw new Error('Unknown recipient');
+    const info = await run('INSERT INTO messages (sender_id,recipient_id,body,forwarded_from,task_id,task_json,created_at) VALUES (?,?,?,?,?,?,?)',
+      [meId, rid, m.body, m.id, m.task_id, m.task_json, nowIso()]);
+    return rowToMsg(await get('SELECT * FROM messages WHERE id=?', [Number(info.lastInsertRowid)]), meId);
+  }
+  return sendMessage(meId, { to, body: m.body, forwardOf: m.id });
+}
+// Share one of my tasks (from any project) into a chat as a task card.
+export async function shareTask(meId, { to, taskId } = {}) {
+  const rid = Number(to);
+  if (!rid || !(await getUserById(rid))) throw new Error('Unknown recipient');
+  const t = await getTask(meId, Number(taskId));
+  if (!t) throw new Error('Task not found');
+  const p = await getProject(meId, t.projectId);
+  const snapshot = { title: t.title, project: p ? p.name : '', status: t.status, prio: t.prio, role: t.role, dueLabel: t.dueLabel };
+  const info = await run('INSERT INTO messages (sender_id,recipient_id,body,task_id,task_json,created_at) VALUES (?,?,?,?,?,?)',
+    [meId, rid, 'Shared task: ' + t.title, t.id, JSON.stringify(snapshot), nowIso()]);
+  await run('DELETE FROM chat_typing WHERE user_id=? AND peer_id=?', [meId, rid]);
+  return rowToMsg(await get('SELECT * FROM messages WHERE id=?', [Number(info.lastInsertRowid)]), meId);
+}
+export async function setTyping(meId, to) {
+  await run('INSERT OR REPLACE INTO chat_typing (user_id,peer_id,updated_at) VALUES (?,?,?)', [meId, Number(to), nowIso()]);
+  return true;
+}
+export async function peerTyping(meId, peerId) {
+  const r = await get('SELECT updated_at FROM chat_typing WHERE user_id=? AND peer_id=?', [Number(peerId), meId]);
+  return !!r && (Date.now() - new Date(r.updated_at).getTime()) < TYPING_WINDOW_MS;
+}
+export async function markChatRead(meId, peerId) {
+  await run('UPDATE messages SET read_at=? WHERE recipient_id=? AND sender_id=? AND read_at IS NULL', [nowIso(), meId, Number(peerId)]);
+  return true;
+}
+export const chatUnreadTotal = async meId =>
+  (await get('SELECT COUNT(*) c FROM messages WHERE recipient_id=? AND read_at IS NULL AND deleted=0', [meId])).c;
 
 // ---------------------------------------------------------------- per-user seed
 export async function seedUserWorkspace(userId) {

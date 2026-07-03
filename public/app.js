@@ -95,6 +95,9 @@ function renderOverall() {
   $('#ov-done').textContent = s.done ?? 0;
   $('#ov-total').textContent = s.total ?? 0;
   $('#ov-fill').style.width = (s.pct ?? 0) + '%';
+  const cu = s.chatUnread || 0;
+  const cb = $('#chat-badge');
+  if (cb) { cb.style.display = cu ? 'inline-flex' : 'none'; cb.textContent = cu > 99 ? '99+' : cu; }
 }
 
 function renderTabs() {
