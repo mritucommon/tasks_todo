@@ -172,6 +172,12 @@ In [`extension/`](extension/) there's a Manifest V3 extension that:
 - **Opens the app as a tab when Chrome starts** (and once right after you install it).
 - Gives you a **popup to quickly add a task** (project, role, priority, due) and
   **take notes**, without leaving the page you're on. Notes are saved to your account.
+- **Capture a task from any page** — select text on WhatsApp Web, Gmail, an article,
+  anything, then press **Alt+Shift+T** (or right-click → *Create task from “…”*). A small
+  in-page card appears pre-filled with the selection (or the page title); pick a project
+  and hit **Add**. It posts to your app in the background, so it works on any site.
+  - Change or set the shortcut at **`chrome://extensions/shortcuts`**.
+  - You must **sign in via the popup once** (the shortcut reuses that saved token).
 
 **Install it (unpacked):**
 

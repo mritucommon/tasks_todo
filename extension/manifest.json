@@ -1,15 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Task List — Quick Add & Notes",
-  "version": "1.0.0",
-  "description": "Add tasks and jot notes to your Task List from a popup, and open the app as a tab when Chrome starts.",
+  "version": "1.1.0",
+  "description": "Add tasks and notes from a popup, capture a task from any page with a shortcut or right-click, and open the app when Chrome starts.",
   "action": {
     "default_popup": "popup.html",
     "default_title": "Task List — Quick Add",
     "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
   },
   "background": { "service_worker": "background.js" },
-  "permissions": ["storage"],
+  "permissions": ["storage", "activeTab", "scripting", "contextMenus"],
   "host_permissions": ["http://localhost:4000/*"],
+  "commands": {
+    "create-task": {
+      "suggested_key": { "default": "Alt+Shift+T", "mac": "Alt+Shift+T" },
+      "description": "Create a task from the current selection or page"
+    }
+  },
   "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" }
 }
