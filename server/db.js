@@ -40,7 +40,8 @@ const nowIso = () => new Date().toISOString();
 // ---------------------------------------------------------------- schema (once per process)
 let schemaReady = null;
 export function ready() {
-  if (!schemaReady) schemaReady = client().executeMultiple(`
+  if (!schemaReady) schemaReady = (async () => {
+    await client().executeMultiple(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT, email TEXT NOT NULL UNIQUE,
       name TEXT NOT NULL DEFAULT '', password_hash TEXT NOT NULL, created_at TEXT NOT NULL);
@@ -67,7 +68,19 @@ export function ready() {
     CREATE INDEX IF NOT EXISTS idx_notes_user ON notes(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
   `);
+    // migration: add is_admin to existing databases (ignored if it already exists)
+    try { await client().execute('ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0'); } catch {}
+    await ensureAdmins();
+  })();
   return schemaReady;
+}
+// Promote admins: any email in ADMIN_EMAILS, and — if no admin exists yet — the
+// first-registered account, so the owner always has dashboard access.
+async function ensureAdmins() {
+  const emails = (process.env.ADMIN_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  for (const e of emails) await run('UPDATE users SET is_admin = 1 WHERE email = ?', [e]);
+  if (!(await get('SELECT 1 FROM users WHERE is_admin = 1 LIMIT 1')))
+    await run('UPDATE users SET is_admin = 1 WHERE id = (SELECT MIN(id) FROM users)');
 }
 
 // ---------------------------------------------------------------- auth
@@ -82,7 +95,7 @@ function verifyPassword(password, stored) {
   const actual = scryptSync(String(password), Buffer.from(saltHex, 'hex'), expected.length);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 }
-const publicUser = u => u && ({ id: u.id, email: u.email, name: u.name, createdAt: u.created_at });
+const publicUser = u => u && ({ id: u.id, email: u.email, name: u.name, isAdmin: !!u.is_admin, createdAt: u.created_at });
 
 export const getUserRowByEmail = email => get('SELECT * FROM users WHERE email = ?', [String(email).trim().toLowerCase()]);
 export const getUserById = async id => publicUser(await get('SELECT * FROM users WHERE id = ?', [id]));
@@ -95,6 +108,10 @@ export async function registerUser({ email, password, name = '' }) {
   const info = await run('INSERT INTO users (email,name,password_hash,created_at) VALUES (?,?,?,?)',
     [e, String(name || '').trim(), hashPassword(password), nowIso()]);
   const userId = Number(info.lastInsertRowid);
+  // First-ever account (or an ADMIN_EMAILS match) becomes admin.
+  const admins = (process.env.ADMIN_EMAILS || '').split(',').map(s => s.trim().toLowerCase()).filter(Boolean);
+  if (admins.includes(e) || !(await get('SELECT 1 FROM users WHERE is_admin = 1 AND id != ? LIMIT 1', [userId])))
+    await run('UPDATE users SET is_admin = 1 WHERE id = ?', [userId]);
   await seedUserWorkspace(userId);
   return getUserById(userId);
 }
@@ -353,6 +370,46 @@ export async function stats(userId) {
   };
 }
 
+// ---------------------------------------------------------------- analytics
+// Pass a userId to scope to one account, or null for a global (admin) view.
+export async function analyticsTotals(userId) {
+  const w = userId ? 'user_id = ?' : '1=1', a = userId ? [userId] : [];
+  const r = await get(`SELECT COUNT(*) total,
+    COALESCE(SUM(status='done'),0) done, COALESCE(SUM(status='todo'),0) todo,
+    COALESCE(SUM(status='inprogress'),0) inprogress FROM tasks WHERE ${w}`, a);
+  const total = r.total || 0, done = r.done || 0;
+  return { total, done, todo: r.todo || 0, inprogress: r.inprogress || 0, pct: Math.round((done / (total || 1)) * 100) };
+}
+// Task completions grouped by calendar day (for the contribution heatmap).
+export async function completionSeries(userId, sinceISO) {
+  const w = userId ? 'user_id = ? AND ' : '', a = userId ? [userId] : [];
+  const rows = await all(`SELECT substr(completed_at,1,10) d, COUNT(*) c FROM tasks
+    WHERE ${w}status='done' AND completed_at IS NOT NULL AND completed_at >= ? GROUP BY d ORDER BY d`, [...a, sinceISO]);
+  return rows.map(r => ({ date: r.d, count: r.c }));
+}
+export async function byProject(userId) {
+  const rows = await all(`SELECT p.name, p.color, COUNT(t.id) total, COALESCE(SUM(t.status='done'),0) done
+    FROM tasks t JOIN projects p ON p.id = t.project_id WHERE t.user_id = ? GROUP BY t.project_id ORDER BY p.created_at`, [userId]);
+  return rows.map(r => ({ name: r.name, color: r.color, total: r.total, done: r.done, pct: Math.round((r.done / (r.total || 1)) * 100) }));
+}
+export async function byRole(userId) {
+  const w = userId ? 'user_id = ? AND ' : '', a = userId ? [userId] : [];
+  const rows = await all(`SELECT role, COUNT(*) total, COALESCE(SUM(status='done'),0) done FROM tasks WHERE ${w}1=1 GROUP BY role`, a);
+  return rows.map(r => ({ role: r.role, total: r.total, done: r.done, pct: Math.round((r.done / (r.total || 1)) * 100) }));
+}
+export async function byUser() {
+  const rows = await all(`SELECT u.email, u.name, COUNT(t.id) total, COALESCE(SUM(t.status='done'),0) done
+    FROM users u LEFT JOIN tasks t ON t.user_id = u.id GROUP BY u.id ORDER BY done DESC, total DESC`);
+  return rows.map(r => ({ email: r.email, name: r.name, total: r.total || 0, done: r.done || 0, pct: Math.round((r.done / (r.total || 1)) * 100) }));
+}
+export async function recentCompletions(userId, limit = 12) {
+  const w = userId ? 't.user_id = ? AND ' : '', a = userId ? [userId] : [];
+  const rows = await all(`SELECT t.title, t.completed_at, p.name proj, u.email FROM tasks t
+    JOIN projects p ON p.id = t.project_id JOIN users u ON u.id = t.user_id
+    WHERE ${w}t.status='done' AND t.completed_at IS NOT NULL ORDER BY t.completed_at DESC LIMIT ?`, [...a, limit]);
+  return rows.map(r => ({ title: r.title, project: r.proj, email: r.email, completedAt: r.completed_at }));
+}
+
 // ---------------------------------------------------------------- per-user seed
 export async function seedUserWorkspace(userId) {
   const ts = nowIso();
@@ -398,7 +455,11 @@ export async function seedUserWorkspace(userId) {
     ['growth','design','low','2026-07-18','Refresh the pitch deck template','todo'],
   ];
   for (const [key, role, prio, due, title, status] of tasks) {
+    // Spread completed dates across the past ~5 months so the contribution
+    // heatmap looks meaningful from day one (instead of all on today).
+    const completedAt = status === 'done'
+      ? new Date(Date.now() - Math.floor(Math.random() * 150) * 86400000).toISOString() : null;
     await run('INSERT INTO tasks (user_id,project_id,title,role,prio,status,due,ai,created_at,updated_at,completed_at) VALUES (?,?,?,?,?,?,?,0,?,?,?)',
-      [userId, idByKey[key], title, role, prio, status, due, ts, ts, status === 'done' ? ts : null]);
+      [userId, idByKey[key], title, role, prio, status, due, ts, ts, completedAt]);
   }
 }

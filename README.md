@@ -147,6 +147,19 @@ curl -b jar.txt http://localhost:4000/api/state
 | GET | `/api/notes` | List notes. Query: `limit`. |
 | POST | `/api/notes` | Create. Body: `{ body, projectId? }`. |
 | GET / PATCH / DELETE | `/api/notes/:id` | Get / update / delete a note. |
+| GET | `/api/analytics/summary` | Totals, per-project/role breakdown, recent completions. Query `scope=me` (default) or `scope=all` (admin only). |
+| GET | `/api/analytics/contributions` | Task completions grouped by day for the heatmap. Query `scope`, `days` (default 371). |
+
+### Dashboard / admin
+
+Open **`/admin.html`** (📊 in the app header) for an analytics dashboard: a
+GitHub-style **contribution heatmap** of task completions, completion rate,
+current/longest streaks, and per-project / per-role breakdowns.
+
+Admins additionally get an **"All users"** scope (aggregate across every account,
+with a per-user leaderboard). The first-registered account is made an admin
+automatically; you can also set `ADMIN_EMAILS=a@x.com,b@y.com` to promote specific
+accounts.
 
 **Auth for non-browser clients:** `/api/auth/login` and `/api/auth/register` also
 return a `token`. Send it as `Authorization: Bearer <token>` instead of the cookie

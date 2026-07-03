@@ -166,6 +166,30 @@ export async function handleApi(req, res) {
       if (method === 'DELETE') return ((await db.deleteNote(uid, id)) ? ok(res, { deleted: true }) : bad(res, 'Note not found', 404)), true;
     }
 
+    // analytics / admin dashboard. scope=all is admin-only (aggregates every account).
+    if (pathname === '/api/analytics/summary' && method === 'GET') {
+      const scope = (sp.get('scope') === 'all' && user.isAdmin) ? null : uid;
+      const out = {
+        scope: scope === null ? 'all' : 'me', isAdmin: !!user.isAdmin,
+        totals: await db.analyticsTotals(scope),
+        byRole: await db.byRole(scope),
+        recent: await db.recentCompletions(scope, 12),
+      };
+      if (scope === null) out.byUser = await db.byUser();
+      else out.byProject = await db.byProject(uid);
+      return ok(res, out), true;
+    }
+    if (pathname === '/api/analytics/contributions' && method === 'GET') {
+      const scope = (sp.get('scope') === 'all' && user.isAdmin) ? null : uid;
+      const days = Math.min(400, Math.max(30, Number(sp.get('days')) || 371));
+      const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+      const series = await db.completionSeries(scope, since);
+      return ok(res, {
+        scope: scope === null ? 'all' : 'me', since,
+        series, total: series.reduce((s, d) => s + d.count, 0), max: series.reduce((m, d) => Math.max(m, d.count), 0),
+      }), true;
+    }
+
     return bad(res, `No route: ${method} ${pathname}`, 404), true;
   } catch (err) {
     return bad(res, err.message || 'Server error', 400), true;

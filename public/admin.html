@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Task List — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root { --accent: #B4471F; }
+    * { box-sizing: border-box; }
+    body { margin: 0; min-height: 100vh; background: #F7F5F0; color: #1B1A17;
+      font-family: 'Instrument Sans', system-ui, sans-serif; }
+    h1,h2 { font-family: 'Space Grotesk', sans-serif; margin: 0; }
+    a { color: inherit; }
+    .wrap { max-width: 1060px; margin: 0 auto; padding: 40px 24px 90px; display: flex; flex-direction: column; gap: 22px; }
+    .top { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+    .eyebrow { font-size: 12px; font-weight: 600; letter-spacing: .14em; text-transform: uppercase; color: #A19A8B; }
+    .title { font-size: 34px; font-weight: 700; letter-spacing: -.02em; }
+    .btn { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #E2DDD1; background: #fff; color: #5C554A;
+      font-size: 13.5px; font-weight: 600; padding: 8px 14px; border-radius: 10px; cursor: pointer; text-decoration: none; }
+    .btn:hover { background: #FBFAF7; }
+    .seg { display: inline-flex; background: #ECE8DE; border-radius: 10px; padding: 3px; }
+    .seg button { border: none; background: transparent; color: #8C8574; font-size: 13.5px; font-weight: 600; padding: 6px 14px; border-radius: 8px; cursor: pointer; }
+    .seg button.on { background: #fff; color: #1B1A17; box-shadow: 0 1px 3px rgba(40,34,20,.14); }
+
+    .card { background: #fff; border: 1px solid #EAE6DC; border-radius: 16px; padding: 20px 22px;
+      box-shadow: 0 1px 2px rgba(40,34,20,.03), 0 8px 24px -18px rgba(40,34,20,.18); }
+    .card h2 { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+    .sub { font-size: 13px; color: #A19A8B; }
+
+    .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 14px; }
+    .tile { background: #fff; border: 1px solid #EAE6DC; border-radius: 14px; padding: 16px 18px; }
+    .tile .n { font-family: 'Space Grotesk', sans-serif; font-size: 30px; font-weight: 700; letter-spacing: -.02em; }
+    .tile .l { font-size: 12.5px; color: #A19A8B; font-weight: 600; margin-top: 2px; }
+    .tile .n small { font-size: 15px; color: #A19A8B; font-weight: 600; }
+
+    /* heatmap */
+    .heat-scroll { overflow-x: auto; padding-bottom: 4px; }
+    .heat { display: inline-flex; flex-direction: column; gap: 6px; min-width: max-content; }
+    .heat-months { display: flex; margin-left: 30px; font-size: 11px; color: #A19A8B; font-weight: 600; height: 14px; position: relative; }
+    .heat-months span { position: absolute; }
+    .heat-body { display: flex; gap: 3px; }
+    .heat-days { display: flex; flex-direction: column; gap: 3px; margin-right: 6px; width: 24px; }
+    .heat-days span { height: 12px; font-size: 10px; color: #B4AD9C; line-height: 12px; }
+    .heat-weeks { display: flex; gap: 3px; }
+    .heat-col { display: flex; flex-direction: column; gap: 3px; }
+    .cell { width: 12px; height: 12px; border-radius: 3px; background: #EAE6DC; }
+    .legend { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #A19A8B; margin-top: 10px; justify-content: flex-end; }
+    .legend .cell { width: 11px; height: 11px; }
+
+    .bars { display: flex; flex-direction: column; gap: 12px; margin-top: 6px; }
+    .bar-row { display: grid; grid-template-columns: 160px 1fr 64px; align-items: center; gap: 12px; }
+    .bar-label { font-size: 13.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bar-track { height: 9px; border-radius: 99px; background: #EEEAE0; overflow: hidden; }
+    .bar-fill { height: 100%; border-radius: 99px; }
+    .bar-val { font-size: 12.5px; color: #78715F; font-weight: 600; text-align: right; }
+
+    .grid2 { display: grid; grid-template-columns: 1.4fr 1fr; gap: 18px; align-items: start; }
+    ul.recent { list-style: none; margin: 6px 0 0; padding: 0; }
+    ul.recent li { display: flex; align-items: baseline; gap: 10px; padding: 8px 0; border-bottom: 1px solid #F5F2EB; }
+    ul.recent .t { flex: 1; font-size: 14px; font-weight: 500; }
+    ul.recent .m { font-size: 12px; color: #A19A8B; white-space: nowrap; }
+    .pill { font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; background: #E7F4EE; color: #2A8062; }
+    .empty { color: #B4AD9C; font-style: italic; font-size: 13.5px; padding: 8px 0; }
+    @media (max-width: 800px) { .grid2 { grid-template-columns: 1fr; } .bar-row { grid-template-columns: 120px 1fr 54px; } }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <span class="eyebrow">Analytics</span>
+        <h1 class="title">Dashboard</h1>
+        <span class="sub" id="scope-note"></span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <div class="seg" id="scope-seg" style="display:none">
+          <button id="scope-me" class="on">Me</button>
+          <button id="scope-all">All users</button>
+        </div>
+        <a class="btn" href="/">← Back to board</a>
+      </div>
+    </div>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="card">
+      <h2 id="heat-title">Task completions</h2>
+      <div class="sub" id="heat-sub">Loading…</div>
+      <div class="heat-scroll" style="margin-top:14px;">
+        <div class="heat">
+          <div class="heat-months" id="heat-months"></div>
+          <div class="heat-body">
+            <div class="heat-days"><span></span><span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span></div>
+            <div class="heat-weeks" id="heat-weeks"></div>
+          </div>
+        </div>
+      </div>
+      <div class="legend">Less
+        <span class="cell" style="background:#EAE6DC"></span>
+        <span class="cell" style="background:#CDE9D3"></span>
+        <span class="cell" style="background:#93D0A0"></span>
+        <span class="cell" style="background:#4FA972"></span>
+        <span class="cell" style="background:#2A8062"></span>
+      More</div>
+    </div>
+
+    <div class="grid2">
+      <div class="card">
+        <h2 id="breakdown-title">By project</h2>
+        <div class="bars" id="breakdown"></div>
+      </div>
+      <div class="card">
+        <h2>By role</h2>
+        <div class="bars" id="byrole"></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Recent completions</h2>
+      <ul class="recent" id="recent"></ul>
+    </div>
+  </div>
+  <script src="./admin.js"></script>
+</body>
+</html>
